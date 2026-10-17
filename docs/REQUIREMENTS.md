@@ -100,7 +100,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | GC-2 | $0 paid spend. No paid API key is needed to build, run, grade or test. Vendors from the owner's preferred list are optional and used only on free tiers [src owner]. | Clean-clone run with no paid keys passes; billing pages show $0 | U§8, P Off-Limits | Must |
 | GC-3 | The agent's language model is called through OpenRouter [src owner], must support tool calling, and a free path works (free-tier model or local model). The golden and adversarial runs (EV-1, EV-3) fit inside that model's free-tier request limits, which are recorded in the results file. | Results file lists model name, its free-tier limit, and the request count used | U§8, B-Tech | Must |
 | GC-4 | Qrypt is the only entropy source [src owner: mandatory]. Live Qrypt use across the whole assessment is ≤ 10,240 KiB, including development, demo and any grader smoke test; 0 KiB were used as of 2026-10-17 [src owner]. | Budget meter reading at submission, cross-checked against Qrypt's portal if it shows usage | U§8, B-QR, P Off-Limits | Must |
-| GC-5 | The server is written in exactly one of Python, TypeScript/Node, Go, Rust or C++; data is held in SQLite or a free-tier SQL database [src B-Tech]. | Repository language statistics; database file or free-tier plan identified in the deployment guide | B-Tech, P | Must |
+| GC-5 | The server is written in exactly one of Python, TypeScript/Node, Go, Rust or C++; data is held in a SQL database with a free tier that supports separate roles and permissions, so AZ-3 and VR-10 can be enforced by the database. SQLite is not used (owner, 2026-10-17); the PRD allows "SQLite or any SQL database with free tier" [src B-Tech]. The same engine runs locally and in CI so the suite stays offline. | Repository language statistics; database engine and free-tier plan named in the deployment guide; AZ-3 and VR-10 tests pass against that engine | B-Tech, P | Must |
 | GC-6 | The server uses an official MCP SDK and runs over stdio; MCP Inspector connects to it and lists the tools [src B-Tech]. | Recorded Inspector session in the demo video | B-Tech | Must |
 | GC-7 | Only endpoints that return no entropy-derived value are hosted: `POST /verify`, the admin API and `GET /health`. No hosted endpoint returns random bytes, integers or issued tokens, so the Qrypt Terms 1.8(a) bar on offering the software as a cloud service is not tripped. | Route list of the deployed service reviewed; scripted request to each hosted route confirms none returns a tool value | U§8, `USERS_handoff.md` | Gate |
 | GC-8 | Use is assessment only: seeded and demo data is fictional, no real customer data, no commercial or public use (Qrypt Terms 1.7a). | Seed script and fixtures contain 0 real personal data (review) | U§8 | Gate |
@@ -139,7 +139,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 
 | ID | Requirement | Trace | Priority |
 |---|---|---|---|
-| FR-2.1 | An end user types a plain-language request such as "issue a one-time reset code for user 42 that expires in 10 minutes" and the agent issues a token for that owner with that expiry and shows it to the user. If no expiry is given the agent applies a default (10 minutes [prop]). | UC-1, B-C3 | Must |
+| FR-2.1 | An end user types a plain-language request into the agent's command-line interface such as "issue a one-time reset code for user 42 that expires in 10 minutes" and the agent issues a token for that owner with that expiry and shows it to the user. If no expiry is given the agent applies a default (10 minutes [prop]). | UC-1, B-C3 | Must |
 | FR-2.2 | The agent also answers requests for random bytes, a random integer, or an API key by calling the matching tool (for example "give me 32 random bytes as hex", "new API key for the billing service"). | UC-1, B-AI | Must |
 | FR-2.3 | When asked to make up a code, the agent declines and offers to issue a real one. | UC-1, B-AI | Must |
 | FR-2.4 | An issued token can be redeemed once through `POST /verify`. | UC-1, B-C3 | Must |
@@ -293,7 +293,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 
 | ID | Requirement | Verified by | Trace | Priority |
 |---|---|---|---|---|
-| DP-1 | From a clean clone, a reader following only the README installs, configures, seeds and passes the tests in ≤ 10 minutes, and has MCP Inspector connected in ≤ 15 minutes [prop]. | Timed walk-through in a fresh container | B-SUB | Must |
+| DP-1 | From a clean clone, a reader following only the README installs (including the local database), configures, seeds and passes the tests in ≤ 10 minutes, and has MCP Inspector connected in ≤ 15 minutes [prop]. | Timed walk-through in a fresh container | B-SUB | Must |
 | DP-2 | A deployed URL serves `POST /verify`, the admin API and `GET /health` over TLS, and stays up from submission until grading ends [tbd: no grading window was given; interim 14 days after submission [prop]]. | Scripted request to all three routes from outside, on submission day and on the last day | B-SUB | Must |
 | DP-3 | The schema is created only by migrations. A clean database plus migrate yields a working app, and running migrate twice causes no error. | Migration test on an empty database | B-CQ, P | Must |
 | DP-4 | Dev, staging and prod differ only in environment configuration: switching profile needs 0 code changes. | Run the suite under two environment sets | B-CQ, P | Must |
@@ -372,7 +372,7 @@ Every **[prop]** and **[tbd]** number. Status is *accepted*, *revised*, or *pend
 
 **Open items that only a running system, an upstream fix or the owner can answer:**
 1. **Time zone.** Confirm CDT or CST for the deadline (GC-1).
-2. **Database roles.** AZ-3 and VR-10 need credentials the application cannot widen. SQLite has no roles, so either another database or a split that keeps the token file out of the agent's reach is needed. This steers the stack choice.
+2. **Database roles (resolved).** AZ-3 and VR-10 need credentials the application cannot widen. SQLite has no roles, so the owner chose a role-capable SQL database (GC-5). The stack doc picks the engine and a free-tier host; it must offer separate roles and a local copy for offline tests.
 3. **Values in the model's context** (CP-5). The brief's fabrication scan assumes the reply shows the value; keeping values from the provider means the scan reads tool returns instead. Free OpenRouter models may log or train on prompts; check the chosen model.
 4. **Fabrication scan.** EV-2 compares replies with tool returns, not the audit log, because the audit holds no value (Decision 6). Confirm this reading is acceptable.
 5. **Pool bytes after the budget is spent** (Decision 2). Confirm serving already-fetched bytes after the meter reaches zero is acceptable, or the opposite.
