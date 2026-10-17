@@ -181,9 +181,9 @@ The value is the per-value trail, not the strength. *(open: this weakens if revi
 
 | Constraint | What it is | Given by |
 |---|---|---|
-| Timeline | Due Tuesday 2026-10-20 at midnight; ready for review Wednesday 2026-10-21. Time zone *(open)*. What to drop first if half done: *(open)* | Project owner |
+| Timeline | Due Tuesday 2026-10-20 at 11:59 PM Central (CST); ready for review Wednesday 2026-10-21. Nothing is to be cut; if short on time, no feature has been designated to drop first | Project owner |
 | Team | One person | Project owner |
-| Spend | Free tiers only; Qrypt use capped at 10,240 KiB total for the assessment; the cap is not shared with other projects; amount already used *(open)* | Assessment brief; project owner |
+| Spend | Free tiers only; Qrypt use capped at 10,240 KiB total for the assessment; the cap is not shared with other projects; none used as of 2026-10-17 | Assessment brief; project owner |
 | Services / vendors | Qrypt entropy is mandatory (the assessment is Qrypt's). The owner's preferred list is a suggestion, not a mandate: Anthropic, Aqua Voice, Cohere, Cursor, DigitalOcean, ElevenLabs, Google One, Midjourney, OpenAI, OpenRouter, Railway, Vultr, Whisper. The agent's language model is reached through OpenRouter | Assessment brief; project owner |
 | Hardware in hand | None; the language model is an API | Project owner |
 | Must integrate with | Any MCP-capable agent client; Qrypt's entropy REST service | Assessment brief |

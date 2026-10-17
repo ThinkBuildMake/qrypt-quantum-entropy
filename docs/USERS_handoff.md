@@ -46,7 +46,7 @@ These items came up while defining the user but describe how the product is buil
 - **Internal clients vs "End Users".** Terms 1.4 defines End Users as employees and authorised contractors. The two seeded clients are test fixtures; confirm no third-party clients draw on the owner's token.
 - **Qrypt allotment visibility.** Check whether Qrypt's portal shows usage per token, which weakens or supports UC-4's case for an own meter.
 - **Is Qrypt validated** under SP 800-90B? Not checked.
-- **Deadline time zone and what to drop first** are unanswered.
+- **Schedule risk.** Deadline is Tue 2026-10-20 11:59 PM CST with nothing to be cut and one builder. Requirements and stories should size against this; if the estimate does not fit, flag the tradeoff to the owner rather than silently dropping a core item.
 - **Qrypt trial terms** may be withdrawn at any time (Terms 3.3); the Terms may change at any time (10.4).
 
 ## Existing products in the same space
