@@ -38,7 +38,7 @@ Not decorated but also provisional:
 | Item | State | Replaced by |
 |---|---|---|
 | `service/report.py` panels fed from logs or server reports (5 of 9) | always "no data" | S19 (logs), S28 (reports); table-fed panels refined by S18 |
-| Database roles, grants, guard triggers (append-only, meter-only-rises, one-way used flag) | not created: migration `0001` makes tables, checks, foreign keys and indexes only | S02 |
+| Database roles, grants, guard triggers (append-only, meter-only-rises, one-way used flag) | real since S02: migration `s02_dbpolicy` (roles have no password until `scripts/set_role_passwords.py` runs; tables stay owned by whoever runs the migration, see DEVIATIONS 9) | done |
 | Stub keys `stub-client-key`, `stub-admin-key` | fixed test keys inside `service/access.py` | S05, S06 |
 | `transport/http_app.py` and `transport/mcp_server.py` | real transports; their routes and tools call the stub modules above | each wiring story as listed |
 | `storage/db.py` | pool helper, unused by the stubs | S04 (restart recovery), then modules |
