@@ -17,7 +17,6 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.pool` | `status` (module-level) | S35 | S35 |
 | `qrypt_entropy.service.pool` | `start` | S12 | S20 |
 | `qrypt_entropy.service.pool` | `stop` | S12 | S20 |
-| `qrypt_entropy.service.issuance` | `random_int` | S14 | S20 |
 | `qrypt_entropy.service.issuance` | `generate_token` | S15 | S20 |
 | `qrypt_entropy.service.issuance` | `get_issuance` | S23 | S33 |
 | `qrypt_entropy.service.tokens` | `redeem` | S21 (S22 rate limit) | S33 |
@@ -60,3 +59,5 @@ S21 (done): `tokens.redeem` is real (one conditional UPDATE on `used_at` per can
 - Log `tool_call` with `duration_ms` (real in `mcp_server.py`); `pool_error_returned` with `waited_s` (real since S11, `pool.py`; `pool_cannot_cover` is not read).
 - Agent log `reply_check` with `found` and `backed` (counts, never values), one per reply: S25 / S27 emit it.
 - `/metrics` series (S30): `qrypt_errors_total{code}`, `qrypt_calls_total{tool}`, `qrypt_upstream_requests_last_10s`, `qrypt_process_start_time_seconds` (the snapshot's `startedAt`).
+
+S14 (done): `Issuance.random_int` is real. `sample_int(span, draw)` is rejection sampling (draw ceil(bits/8) bytes, mask to the bits the span needs, redraw when out of range; never a modulo, VR-2). A call may draw several times: every byte drawn, kept or rejected, is in `bytes_consumed` and in its `issuance_batches` rows (CT-1). Wording assumed for the open VR-8 question (ARCHITECTURE open question 2, option A): the "0 bytes removed" rule holds for a call's first draw; if a later draw fails, bytes already drawn are discarded, never given to anyone else, and no issuance row is written (the call returns the error). A call with min = max still draws one byte so it has an audit slice. S15 reuses `sample_int` for `otp_6`. The tool is still reached through the stub pool (`pool.take`) and `Access` stubs until S20 and S06.

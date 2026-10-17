@@ -1,6 +1,6 @@
 """Issuance: the tools and the audit record. Owns `issuances`, `issuance_batches`.
 
-get_random_bytes and the audit record are real (S13). Still S01 stubs: S14 (random_int), S15 (generate_token),
+get_random_bytes and the audit record are real (S13), and random_int (S14). Still S01 stubs: S15 (generate_token),
 S23 (getIssuance); wired to the transports by S20 and S33.
 """
 
@@ -9,6 +9,7 @@ import base64
 import time
 import uuid
 from collections import deque
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 import psycopg
@@ -92,13 +93,39 @@ async def get_random_bytes(principal: Principal, length: int, encoding: str) -> 
     return IssuedValue(value=data.hex() if encoding == "hex" else base64.b64encode(data).decode(), metadata=metadata)
 
 
-@stub("S14")
+async def sample_int(span: int, draw: Callable[[int], Awaitable[bytes]]) -> int:
+    """A uniform integer in [0, span) by rejection sampling (VR-2): draw just enough bytes, mask them to the bits the
+    span needs, and draw again when the result falls outside it. Never a modulo. At least one byte is always drawn."""
+    bits = (span - 1).bit_length()
+    width = max(1, -(-bits // 8))
+    mask = (1 << bits) - 1
+    while True:
+        candidate = int.from_bytes(await draw(width)) & mask
+        if candidate < span:
+            return candidate
+
+
 async def random_int(principal: Principal, min: int, max: int) -> IssuedValue:  # noqa: A002
-    if min > max or abs(min) > SAFE_INT or abs(max) > SAFE_INT:
-        raise InvalidArgument("min must not exceed max, and both must be within 2^53 - 1")
-    taken = await pool.take(8)
-    _count("random_int")
-    return IssuedValue(value=min, metadata=_metadata(8, taken.slices[0].batch_id))
+    started = time.perf_counter()
+    tool = "random_int"
+    try:
+        if min > max or abs(min) > SAFE_INT or abs(max) > SAFE_INT:
+            raise InvalidArgument("min must not exceed max, and both must be within 2^53 - 1")
+        slices: list[BatchSlice] = []
+
+        async def draw(n: int) -> bytes:  # every byte drawn counts as consumed, kept or rejected (CT-1)
+            taken = await pool.take(n)
+            slices.extend(taken.slices)
+            return taken.bytes
+
+        value = min + await sample_int(max - min + 1, draw)
+        metadata = await asyncio.to_thread(_audit, principal, tool, sum(s.byte_count for s in slices), slices)
+    except AppError as err:  # a failed later draw discards the bytes already drawn and writes no row
+        record_error(err.code, (time.perf_counter() - started) * 1000)
+        raise
+    _count(tool)
+    _durations_ms.append((time.perf_counter() - started) * 1000)
+    return IssuedValue(value=value, metadata=metadata)
 
 
 @stub("S15")
