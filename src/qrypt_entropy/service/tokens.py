@@ -1,27 +1,58 @@
 """Tokens: redeemable tokens and redemption. Owns `tokens`, `redemption_outcomes`.
 
-S01 STUB: no hashing, no storage; redeem always says `redeemed`. Real: S16 (store, hash), S17 (seed),
-S21 (redeem), S22 (rate limit).
+S16 builds the write path: `hash_token`, `store_token`, `store_seed_token` and the single constant-time hash
+comparison `hashes_equal`. S01 STUB: `redeem` always says `redeemed`. Real: S21 (redeem), S22 (rate limit).
+Only a keyed hash of a token is ever stored; the plain value and the pepper are never written or logged.
 """
 
 import hashlib
+import hmac
+import uuid
 
+import psycopg
+
+from qrypt_entropy.config import get_settings
+from qrypt_entropy.errors import AppError, InvalidArgument
 from qrypt_entropy.stubs import stub
 
+MAX_OWNER_LENGTH = 256
 
-@stub("S16")
+
 def hash_token(owner: str, value: str) -> bytes:
-    return hashlib.sha256(f"{owner}\0{value}".encode()).digest()  # real: HMAC-SHA-256 under the pepper
+    """HMAC-SHA-256 under the server-side pepper of the owner joined to the value (so owners never collide)."""
+    pepper = get_settings().token_pepper
+    if pepper is None or not pepper.get_secret_value():
+        raise AppError("token pepper is not configured", code="temporarily_unavailable")
+    message = f"{owner}\0{value}".encode()
+    return hmac.new(pepper.get_secret_value().encode(), message, hashlib.sha256).digest()
 
 
-@stub("S16")
+def hashes_equal(a: bytes, b: bytes) -> bool:
+    """The one place token hashes are compared (VR-5)."""
+    return hmac.compare_digest(a, b)
+
+
+def _insert(conn, issuance_id: str | None, owner: str, kind: str, value: str, expiry_seconds: int) -> None:
+    if len(owner) > MAX_OWNER_LENGTH:
+        raise InvalidArgument(f"owner is longer than {MAX_OWNER_LENGTH} characters")
+    if expiry_seconds <= 0:
+        raise InvalidArgument("expiry_seconds must be positive")
+    conn.execute(
+        "INSERT INTO tokens (id, issuance_id, owner, kind, token_hash, expires_at, is_seed)"
+        " VALUES (%s, %s, %s, %s, %s, now() + make_interval(secs => %s), %s)",
+        (uuid.uuid4(), issuance_id, owner, kind, hash_token(owner, value), expiry_seconds, issuance_id is None),
+    )
+
+
 def store_token(tx, issuance_id: str, owner: str, kind: str, value: str, expiry_seconds: int) -> None:
-    return None
+    """Insert the token's hash on the caller's transaction `tx` (a psycopg connection); commit is the caller's."""
+    _insert(tx, issuance_id, owner, kind, value, expiry_seconds)
 
 
-@stub("S17")
 def store_seed_token(owner: str, kind: str, value: str, expiry_seconds: int) -> None:
-    return None
+    """Seed script only: a token flagged is_seed with no issuance, committed on its own connection."""
+    with psycopg.connect(get_settings().database_url) as conn:
+        _insert(conn, None, owner, kind, value, expiry_seconds)
 
 
 @stub("S21")

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     per_call_max_bytes: int = 1024
     token_expiry_default_seconds: int = 600
     token_expiry_max_seconds: int = 86400
+    token_pepper: SecretStr | None = None
 
 
 @lru_cache

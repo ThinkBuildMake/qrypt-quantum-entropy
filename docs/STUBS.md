@@ -27,9 +27,6 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.issuance` | `generate_token` | S15 | S20 |
 | `qrypt_entropy.service.issuance` | `get_issuance` | S23 | S33 |
 | `qrypt_entropy.service.issuance` | `call_stats` | S28 | S35 |
-| `qrypt_entropy.service.tokens` (`service/tokens.py`) | `hash_token` | S16 | S20 |
-| `qrypt_entropy.service.tokens` | `store_token` | S16 | S20 |
-| `qrypt_entropy.service.tokens` | `store_seed_token` | S17 | S20 |
 | `qrypt_entropy.service.tokens` | `redeem` | S21 (S22 rate limit) | S33 |
 | `qrypt_entropy.service.status` (`service/status.py`) | `get_health` | S29 | S35 |
 | `qrypt_entropy.service.status` | `get_metrics` | S30 | S35 |

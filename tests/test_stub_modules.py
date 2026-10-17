@@ -31,7 +31,7 @@ async def test_pool_and_source_stubs_keep_their_contract_bounds():
 def test_status_and_token_stubs():
     assert "qrypt_pool_level_bytes" in status.get_metrics()
     assert tokens.redeem("u", "1") == "redeemed"
-    assert len(tokens.hash_token("u", "1")) == 32 and len(hash_key("k")) == 32
+    assert len(hash_key("k")) == 32
     assert create_credential("client", "x")[0].role == "client"
     assert authenticate(STUB_CLIENT_KEY, {"client"}).name == "stub-client"
 
