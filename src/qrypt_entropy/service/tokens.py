@@ -3,7 +3,9 @@
 S16 builds the write path: `hash_token`, `store_token`, `store_seed_token` and the single constant-time hash
 comparison `hashes_equal`. S21 builds `redeem`: a conditional UPDATE sets `used_at` only while the
 token is unused and unexpired (database clock), so two simultaneous redemptions give one `redeemed` (VR-4).
-S22 adds the rate limit.
+S22 adds the rate limit (AZ-6): `redeem` first takes a per-owner transaction advisory lock, so attempts for one owner
+run one at a time, then counts the owner's failed outcomes (`already_used`, `expired`, `unknown`) in the window on the
+database clock; at the limit the attempt is recorded as `rate_limited` and nothing else is looked at.
 Only a keyed hash of a token is ever stored; the plain value and the pepper are never written or logged.
 """
 
@@ -11,11 +13,14 @@ import hashlib
 import hmac
 import uuid
 
+import psycopg
+
 from qrypt_entropy.config import get_settings
-from qrypt_entropy.errors import AppError, InvalidArgument
+from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable
 from qrypt_entropy.storage import db
 
 MAX_OWNER_LENGTH = 256
+FAILED_OUTCOMES = ("already_used", "expired", "unknown")
 
 
 def hash_token(owner: str, value: str) -> bytes:
@@ -55,10 +60,38 @@ def store_seed_token(owner: str, kind: str, value: str, expiry_seconds: int) -> 
         _insert(conn, None, owner, kind, value, expiry_seconds)
 
 
+def _lock_owner(conn, owner: str, timeout_ms: int) -> None:
+    """Serialise attempts for one owner; a flood cannot hold pooled connections waiting for longer than the timeout."""
+    conn.execute("SELECT set_config('lock_timeout', %s, true)", (f"{timeout_ms}ms",))
+    try:
+        conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (owner,))
+    except psycopg.errors.LockNotAvailable:
+        raise TemporarilyUnavailable("too many simultaneous attempts for this owner") from None
+    conn.execute("SELECT set_config('lock_timeout', '0', true)")
+
+
+def _record(conn, token_id, owner: str, outcome: str) -> str:
+    conn.execute(
+        "INSERT INTO redemption_outcomes (id, token_id, owner, outcome, attempted_at)"
+        " VALUES (%s, %s, %s, %s, clock_timestamp())",
+        (uuid.uuid4(), token_id, owner, outcome),
+    )
+    return outcome
+
+
 def redeem(owner: str, value: str) -> str:
     """Redeem the owner's token for `value`; record exactly one outcome (never the value) in the same transaction."""
     presented = hash_token(owner, value)
+    settings = get_settings()
     with db.connection() as conn:
+        _lock_owner(conn, owner, settings.rate_limit_lock_timeout_ms)
+        failures = conn.execute(
+            "SELECT count(*) FROM redemption_outcomes WHERE owner = %s AND outcome = ANY(%s)"
+            " AND attempted_at > clock_timestamp() - make_interval(secs => %s)",
+            (owner, list(FAILED_OUTCOMES), settings.rate_limit_window_seconds),
+        ).fetchone()[0]
+        if failures >= settings.rate_limit_max_failures:
+            return _record(conn, None, owner, "rate_limited")
         rows = conn.execute(
             "SELECT id, token_hash FROM tokens WHERE owner = %s ORDER BY expires_at", (owner,)
         ).fetchall()
@@ -78,8 +111,4 @@ def redeem(owner: str, value: str) -> str:
             ).fetchall()
             token_id, used = next((s for s in states if s[1]), states[0])
             outcome = "already_used" if used else "expired"
-        conn.execute(
-            "INSERT INTO redemption_outcomes (id, token_id, owner, outcome) VALUES (%s, %s, %s, %s)",
-            (uuid.uuid4(), token_id, owner, outcome),
-        )
-    return outcome
+        return _record(conn, token_id, owner, outcome)

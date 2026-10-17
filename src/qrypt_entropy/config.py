@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     pool_high_mark_bytes: int = 128 * 1024
     token_expiry_default_seconds: int = 600
     token_expiry_max_seconds: int = 86400
+    rate_limit_window_seconds: float = 600
+    rate_limit_max_failures: int = 5
+    rate_limit_lock_timeout_ms: int = 2000
     token_pepper: SecretStr | None = Field(None, validation_alias=AliasChoices("PEPPER", "TOKEN_PEPPER"))
 
     @model_validator(mode="after")

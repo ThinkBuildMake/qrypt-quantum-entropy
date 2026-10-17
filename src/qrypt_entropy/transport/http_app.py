@@ -26,7 +26,7 @@ for _secret in get_settings().secret_values():
     register_secret(_secret)
 log = get_logger("http")
 _BEARER = re.compile(r"^Bearer (\S+)$")
-REFUSAL_STATUS = {"unknown": 404, "already_used": 409, "expired": 410}  # S22 adds rate_limited: 429
+REFUSAL_STATUS = {"unknown": 404, "already_used": 409, "expired": 410, "rate_limited": 429}
 
 
 def require_roles(*roles: str) -> Callable:
