@@ -9,10 +9,9 @@ import hashlib
 import hmac
 import uuid
 
-import psycopg
-
 from qrypt_entropy.config import get_settings
 from qrypt_entropy.errors import AppError, InvalidArgument
+from qrypt_entropy.storage import db
 from qrypt_entropy.stubs import stub
 
 MAX_OWNER_LENGTH = 256
@@ -51,7 +50,7 @@ def store_token(tx, issuance_id: str, owner: str, kind: str, value: str, expiry_
 
 def store_seed_token(owner: str, kind: str, value: str, expiry_seconds: int) -> None:
     """Seed script only: a token flagged is_seed with no issuance, committed on its own connection."""
-    with psycopg.connect(get_settings().database_url) as conn:
+    with db.connect() as conn:
         _insert(conn, None, owner, kind, value, expiry_seconds)
 
 

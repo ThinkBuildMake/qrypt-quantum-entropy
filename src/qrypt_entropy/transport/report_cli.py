@@ -2,14 +2,12 @@
 
 import sys
 
-import psycopg
-
-from qrypt_entropy.config import get_settings
 from qrypt_entropy.service.report import build_panels
+from qrypt_entropy.storage import db
 
 
 def main() -> int:
-    with psycopg.connect(get_settings().database_url) as conn:
+    with db.connect() as conn:
         panels = build_panels(conn)
     for number, panel in enumerate(panels, 1):
         print(f"PANEL {number} {panel.name} [{panel.source}]: {panel.reading}")

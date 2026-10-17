@@ -9,9 +9,9 @@ from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import ValidationError
 
-from qrypt_entropy.config import get_settings
+from qrypt_entropy.config import MCP_SERVER_SECRETS, ConfigError, get_settings
 from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable
-from qrypt_entropy.logs import configure_logging, get_logger
+from qrypt_entropy.logs import configure_logging, get_logger, register_secret
 from qrypt_entropy.models import IssuedValue, Principal
 from qrypt_entropy.service import access, issuance
 
@@ -35,6 +35,8 @@ class EntropyServer(MCPServer):
             cause = exc.__cause__
             if isinstance(cause, ToolError):  # a deliberate AppError body raised by our own wrapper
                 raise ToolError(str(cause)) from exc
+            if isinstance(cause, AppError):  # any module's anticipated failure keeps its code (CT-4)
+                raise ToolError(cause.json()) from exc
             if isinstance(cause, ValidationError):
                 fields = sorted({".".join(str(p) for p in e["loc"]) for e in cause.errors()})
                 raise ToolError(InvalidArgument(f"invalid arguments: {', '.join(fields)}").json()) from exc
@@ -58,7 +60,7 @@ def build_server(key_provider: Callable[[], str | None]) -> EntropyServer:
         except Exception as err:
             log.error("tool_call_crashed", tool=name, error_type=type(err).__name__, duration_ms=_ms(started))
             raise ToolError(TemporarilyUnavailable("the call could not be completed").json()) from err
-        log.info("tool_call", tool=name, client=principal.name, duration_ms=_ms(started))
+        log.info("tool_call", tool=name, client_id=principal.client_id, duration_ms=_ms(started))
         return result
 
     @server.tool()
@@ -87,14 +89,23 @@ def _ms(started: float) -> float:
 def main() -> int:
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_file or None)
+    for secret in settings.secret_values():
+        register_secret(secret)
+    try:
+        settings.require(MCP_SERVER_SECRETS)
+    except ConfigError as err:
+        log.error("start_refused", cause=str(err))
+        return 1
     try:
         access.authenticate(settings.mcp_client_key, {"client"})
     except AppError as err:
         log.error("connect_refused", error=err.code)
-        print(err.json(), file=sys.stderr)
         return 1
     log.info("server_started", env=settings.app_env)
-    build_server(lambda: get_settings().mcp_client_key).run("stdio")
+    try:
+        build_server(lambda: get_settings().mcp_client_key).run("stdio")
+    finally:
+        access.close_pools()  # a pool left open prints a traceback at exit, and a log line must always be JSON
     return 0
 
 

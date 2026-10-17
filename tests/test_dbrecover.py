@@ -135,7 +135,7 @@ def test_http_db_down(monkeypatch):  # AC2
             return conn.execute("SELECT 1").fetchone()
 
     monkeypatch.setattr(http_app.meter, "get_usage", read_clients)
-    monkeypatch.setattr(access, "authenticate", lambda key, roles: None)
+    monkeypatch.setattr(access, "authenticate", lambda key, roles: access.Principal("c1", "admin", "n"))
     resp = TestClient(http_app.app).get("/admin/usage", headers={"Authorization": "Bearer k"})
     assert resp.status_code == 503
     assert resp.json()["error"] == "temporarily_unavailable"

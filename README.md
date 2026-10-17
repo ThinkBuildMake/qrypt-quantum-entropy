@@ -6,7 +6,7 @@ interface exists as a contract stub; see `docs/STUBS.md`.
 ```
 make install        # uv, Python 3.14, locked deps
 make db-up migrate  # Postgres: Docker Compose (18) if available, else a per-worktree database
-make mcp-list       # the three tools over stdio;  docs/mcp-client.json is the Inspector/client snippet
+PEPPER=local-dev-pepper make mcp-list  # the three tools over stdio;  docs/mcp-client.json is the Inspector/client snippet
 make mcp-call TOOL=get_random_bytes ARGS='{"length":8,"encoding":"hex"}'
 make report         # nine empty metric panels
 make gate           # lint, import direction, one language, secret scan, tests + coverage + matrix + fuzz + p95

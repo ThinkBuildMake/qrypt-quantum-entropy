@@ -6,6 +6,7 @@ S01: every route answers from the service stubs, in the contract's shapes.
 import re
 import uuid
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Request
@@ -14,13 +15,15 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, StrictInt
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from qrypt_entropy.config import get_settings
+from qrypt_entropy.config import HTTP_SERVICE_SECRETS, get_settings
 from qrypt_entropy.errors import AppError, InvalidArgument, NotFound, TemporarilyUnavailable
-from qrypt_entropy.logs import configure_logging, get_logger
+from qrypt_entropy.logs import configure_logging, get_logger, register_secret
 from qrypt_entropy.models import Principal
 from qrypt_entropy.service import access, issuance, meter, status, tokens
 
 configure_logging(get_settings().log_level)
+for _secret in get_settings().secret_values():
+    register_secret(_secret)
 log = get_logger("http")
 _BEARER = re.compile(r"^Bearer (\S+)$")
 
@@ -28,9 +31,11 @@ _BEARER = re.compile(r"^Bearer (\S+)$")
 def require_roles(*roles: str) -> Callable:
     """Dependency that authenticates the bearer key. `allowed_roles` lets the matrix test read the policy."""
 
-    def dependency(authorization: Annotated[str | None, Header()] = None) -> Principal:
+    def dependency(request: Request, authorization: Annotated[str | None, Header()] = None) -> Principal:
         match = _BEARER.match(authorization or "")
-        return access.authenticate(match.group(1) if match else None, set(roles))
+        principal = access.authenticate(match.group(1) if match else None, set(roles))
+        request.state.client_id = principal.client_id
+        return principal
 
     dependency.allowed_roles = set(roles)  # type: ignore[attr-defined]
     return dependency
@@ -49,7 +54,21 @@ class ClientBody(BaseModel):
     name: str = Field(min_length=1, max_length=256)
 
 
-app = FastAPI(title="Qrypt entropy service (S01 stubs)", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    get_settings().require(HTTP_SERVICE_SECRETS)  # a missing secret stops the start, naming the variable
+    yield
+
+
+app = FastAPI(title="Qrypt entropy service (S01 stubs)", docs_url=None, redoc_url=None, lifespan=_lifespan)
+
+
+@app.middleware("http")
+async def _log_request(request: Request, call_next):
+    response = await call_next(request)
+    fields = {"client_id": request.state.client_id} if hasattr(request.state, "client_id") else {}
+    log.info("request", method=request.method, path=request.url.path, status=response.status_code, **fields)
+    return response
 
 
 @app.exception_handler(AppError)

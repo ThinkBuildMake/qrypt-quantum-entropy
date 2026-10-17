@@ -81,7 +81,8 @@ def stdio_env():
 
 def server_env() -> dict[str, str]:
     """What a launched MCP server process needs besides its client key."""
-    return {k: os.environ[k] for k in ("DATABASE_URL", "KEY_HASH_SECRET") if k in os.environ}
+    keys = ("DATABASE_URL", "KEY_HASH_SECRET")
+    return {"PEPPER": "test-pepper", **{k: os.environ[k] for k in keys if k in os.environ}}
 
 
 def pytest_terminal_summary(terminalreporter):

@@ -28,7 +28,7 @@ GATE_P95_MS ?= 50
 export GATE_P95_MS
 
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles mcp-list mcp-call report test lint gate \
-        test-db-restart check-imports check-language secret-scan run-http config-show
+        test-db-restart check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -101,6 +101,9 @@ test-db-restart: ## opt-in: really restart the local Postgres (disrupts other wo
 check-imports:
 	$(UV) python tools/check_imports.py src
 
+check-env: ## .env.example lists every setting with placeholders only
+	$(UV) python -m tools.check_env
+
 check-language:
 	$(UV) python tools/check_language.py
 
@@ -111,6 +114,7 @@ gate: db-up migrate ## the regression gate: lint, tests + coverage + matrix + fu
 	$(MAKE) lint
 	$(MAKE) check-imports
 	$(MAKE) check-language
+	$(MAKE) check-env
 	$(MAKE) secret-scan
 	$(MAKE) test
 	@echo "GATE PASSED"

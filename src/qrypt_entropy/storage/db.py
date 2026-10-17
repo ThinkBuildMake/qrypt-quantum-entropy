@@ -22,23 +22,34 @@ _pools: dict[str, ConnectionPool] = {}
 _lock = Lock()
 
 
+UTC_OPTIONS = "-c timezone=UTC"  # stored times are UTC whatever the server's zone (ARCHITECTURE: Time)
+
+
+def connect(url: str | None = None, **kwargs) -> psycopg.Connection:
+    """A single connection for scripts and one-off writes, in UTC like every pooled one."""
+    return psycopg.connect(url or get_settings().database_url, options=UTC_OPTIONS, **kwargs)
+
+
 def open_pool(url: str | None = None, **kwargs) -> ConnectionPool:
     """A pool that checks connections before use so it survives a database restart (RL-7)."""
     kwargs.setdefault("timeout", POOL_WAIT_SECONDS)
     # A half-open connection (server gone without a FIN) must not outlast the fail-fast wait.
-    kwargs.setdefault(
-        "kwargs",
-        {
-            "connect_timeout": 5,
-            "keepalives": 1,
-            "keepalives_idle": 5,
-            "keepalives_interval": 2,
-            "keepalives_count": 2,
-            "tcp_user_timeout": 5000,
-        },
-    )
+    connection = {
+        "connect_timeout": 5,
+        "keepalives": 1,
+        "keepalives_idle": 5,
+        "keepalives_interval": 2,
+        "keepalives_count": 2,
+        "tcp_user_timeout": 5000,
+        **kwargs.pop("kwargs", {}),
+        "options": UTC_OPTIONS,
+    }
     return ConnectionPool(
-        url or get_settings().database_url, check=ConnectionPool.check_connection, open=True, **kwargs
+        url or get_settings().database_url,
+        check=ConnectionPool.check_connection,
+        open=True,
+        kwargs=connection,
+        **kwargs,
     )
 
 

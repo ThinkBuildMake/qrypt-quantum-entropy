@@ -1,12 +1,14 @@
 """Small MCP client for `make mcp-list` and `make mcp-call`: launches the server over stdio like Inspector does.
 
 python scripts/mcp_client.py list
+python scripts/mcp_client.py raw     # the server's raw stdout lines: protocol only
 python scripts/mcp_client.py call get_random_bytes '{"length":8,"encoding":"hex"}'
 """
 
 import asyncio
 import json
 import os
+import subprocess
 import sys
 
 from mcp.client import Client
@@ -18,7 +20,11 @@ def server_params() -> StdioServerParameters:
         "PATH": os.environ.get("PATH", ""),
         "MCP_CLIENT_KEY": os.environ.get("MCP_CLIENT_KEY", "stub-client-key"),
         "LOG_FILE": os.environ.get("LOG_FILE", "logs/server.log"),
-        **{k: os.environ[k] for k in ("DATABASE_URL", "KEY_HASH_SECRET") if k in os.environ},
+        **{
+            k: os.environ[k]
+            for k in ("DATABASE_URL", "KEY_HASH_SECRET", "PEPPER", "TOKEN_PEPPER", "APP_PROFILE")
+            if k in os.environ
+        },
     }
     return StdioServerParameters(command=sys.executable, args=["-m", "qrypt_entropy.transport.mcp_server"], env=env)
 
@@ -39,7 +45,34 @@ async def call_tool(name: str, raw_args: str) -> int:
     return 1 if result.is_error else 0
 
 
+def raw_session() -> int:
+    """Drive the server by hand and print every line it wrote to standard output; fail if one is not JSON-RPC."""
+    params = server_params()
+    server = subprocess.Popen(  # noqa: S603
+        [params.command, *params.args], env=params.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    hello = {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "raw", "version": "0"}}
+    call = {"name": "get_random_bytes", "arguments": {"length": 8, "encoding": "hex"}}
+    requests = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": hello},
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": call},
+    ]
+    server.stdin.write("".join(json.dumps(r) + "\n" for r in requests))
+    server.stdin.flush()
+    out = []
+    while len(out) < 3 and (line := server.stdout.readline()):  # one reply per request that has an id
+        out.append(line)
+    server.stdin.close()
+    server.wait(timeout=30)
+    print("".join(out), end="")
+    return 0 if len(out) == 3 and all(json.loads(line).get("jsonrpc") == "2.0" for line in out) else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["raw"]:
+        sys.exit(raw_session())
     if sys.argv[1:2] == ["list"]:
         sys.exit(asyncio.run(list_tools()))
     if sys.argv[1:2] == ["call"] and len(sys.argv) == 4:
