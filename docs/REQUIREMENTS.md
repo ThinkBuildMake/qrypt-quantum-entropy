@@ -112,7 +112,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 
 | ID | Requirement | Verified by | Trace | Priority |
 |---|---|---|---|---|
-| DE-1 | At most 30 requests to Qrypt in any 10-second window, however many callers there are [src B-QR]. The SLA's looser 20 per second is not relied on (Decision 4). | Mock upstream records request timestamps during the 100-caller load test; max count in any sliding 10 s window ≤ 30 | B-QR, B-C2 | Gate |
+| DE-1 | At most 30 requests to Qrypt in any 10-second window, however many callers there are [src B-QR]. The SLA's looser 20 per second is not relied on (Decision 4). The limit is per Qrypt account, so this holds for one live server process at a time [prop]; two live processes would each refill on their own and need a shared limiter. | Mock upstream records request timestamps during the 100-caller load test; max count in any sliding 10 s window ≤ 30 | B-QR, B-C2 | Gate |
 | DE-2 | Every upstream request asks for 1 to 512 KiB [src B-QR]; the client never sends a size outside that range, so Qrypt's 400 is unreachable in normal operation. | Unit test over boundary sizes 0, 1, 512, 513 shows nothing is sent outside 1–512 | B-QR | Must |
 | DE-3 | After an upstream 429 the first retry waits ≥ 0.5 s, each further consecutive 429 at least doubles the nominal wait (1, 2, 4, 8, 16, 32 s, capped at 60 s), and each wait is randomised to between 50% and 100% of nominal [prop]. During 60 s of continuous 429 the client makes ≤ 8 upstream requests (worst case waits of 0.5 + 1 + 2 + 4 + 8 + 16 + 30 s put the 8th attempt past 60 s, so ≤ 7 occur). | Mock returns 429 for 120 s; request log counts ≤ 8 in the first 60 s; waits differ between two runs with different jitter seeds | B-EC | Must |
 | DE-4 | An upstream request that has not answered within 5 s [prop] counts as a failure and is handled as a 5xx. | Mock delays a reply 6 s; the caller receives the unavailable error and the request is abandoned | B-EC | Must |
@@ -211,7 +211,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | VR-4 | A token redeems exactly once, even when two redemptions race: over 1,000 trials [prop] of 2 simultaneous redemptions of one token, exactly 1 succeeds. A redemption at or after expiry fails. | Committed race test and expiry test with a controllable clock | B-C3, FR-2.4–2.6 | Gate |
 | VR-5 | Comparison of token hashes is constant-time. | Review of the single comparison path; honest limit: a timing measurement is too noisy to fail reliably | B-EC | Must |
 | VR-6 | Tokens are stored only as an HMAC-SHA-256 hash under a server-side pepper, with expiry, owner and a single-use flag. After seeding, 0 issued token values appear in the database and the pepper is not in it. | Dump the database and grep for every seeded value and the pepper; 0 matches | B-SEC, B-C3 | Gate |
-| VR-7 | The meter equals the exact sum of KiB requested upstream (error 0 KiB), and the total requested never exceeds the budget, including when refills race. When the remaining budget is smaller than a normal refill, the refill is sized to what remains. | Test with 100 concurrent callers and a small budget; compare meter with mock's request log | B-C4, FR-5.1 | Gate |
+| VR-7 | The meter equals the exact sum of KiB requested upstream (error 0 KiB), and the total requested never exceeds the budget, including when refills race. When the remaining budget is smaller than a normal refill, the refill is sized to what remains. | Test with 100 concurrent callers and a small budget; compare meter with mock's request log. Repeat with two server processes sharing one database: the total across both never passes the budget (the meter is shared, not per process) | B-C4, FR-5.1 | Gate |
 | VR-8 | A call that the pool cannot cover in full fails whole: 0 bytes are removed from the pool for it. | Test: pool holds N bytes, request N+1 with upstream down; pool level still N | Decision 2 | Must |
 | VR-9 | Each issuance produces exactly one audit record containing client, tool, bytes consumed, batch id(s) and timestamp. In the 100-caller load test the audit row count equals the successful call count. A value spanning two batches lists both. | Compare counts from the load test; inspect a call that spans a batch boundary | B-C5, FR-4 | Gate |
 | VR-10 | The audit log is append-only. Update and delete on audit records fail at the storage layer, not just in the application, for the application's own credentials. | Test attempts update and delete with the application's credentials; both fail | B-C5, FR-4.3 | Gate |
@@ -222,9 +222,11 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 
 | ID | Requirement | Verified by | Trace | Priority |
 |---|---|---|---|---|
-| PF-1 | Tool-call latency on a warm pool is < 50 ms at p95 [src B-PB], measured at the MCP client from sending the request to receiving the response. 1,000 calls over stdio, mixed evenly across the three tools, each asking for ≤ 64 bytes [prop], against the mocked upstream. | Committed scripted MCP client; p50, p95, p99 written to the results file | B-PB, P | Must |
+| PF-1 | Tool-call latency on a warm pool is < 50 ms at p95 [src B-PB], measured at the MCP client from sending the request to receiving the response. 1,000 calls over stdio, mixed evenly across the three tools, each asking for ≤ 64 bytes [prop], against the mocked upstream and a database on the same host as the server [prop]. Every call writes its audit row before it returns (RL-6), so a database a region away (50–300 ms a round trip) could not meet this. | Committed scripted MCP client; p50, p95, p99 written to the results file | B-PB, P | Must |
 | PF-2 | 100 concurrent callers are sustained with 0 errors [src B-PB]. "Sustained" means 100 calls in flight at all times for at least 30 s [prop], against a mock that enforces Qrypt's rate limit and adds 200 ms of latency [prop]. Throughput and error rate are reported. | Committed k6, Locust or scripted client; results file | B-PB, B-C2 | Must |
 | PF-3 | At least 64 KiB are served per upstream request [src B-PB], computed over the PF-2 run as KiB served ÷ upstream requests (the ≤ 1 KiB startup check, DE-5, is excluded). Individual upstream requests therefore ask for ≥ 64 KiB. | Ratio from the budget meter at the end of the load test | B-PB, P | Must |
+| PF-4 | An end user gets the agent's reply with a code within 10 s, language-model time included [src user, 2026-10-17]. | Scripted agent run over the golden set against the real model; p95 of reply time in the results file | FR-2.1, FR-2.2 | Must |
+| PF-5 | `POST /verify`, each admin route and the metrics endpoint answer in ≤ 1 s at p95 with the database on the same host [prop]. | Scripted requests, 100 per route, p95 in the results file | FR-2.4, FR-4, FR-5, OB-4 | Should |
 
 ### 3.4 Scalability (SC-)
 
@@ -242,12 +244,13 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | RL-4 | The meter survives restarts: after a restart, used KiB is ≥ the value before it (0 KiB lost), so a restart cannot reset the budget. | Run, restart, read meter | B-C4 | Gate |
 | RL-5 | No unhandled exception reaches a caller. Over 1,000 malformed inputs [prop] across every tool and HTTP route, 0 produce an unhandled exception or a 5xx; each returns a structured 4xx or tool error. | Committed fuzz test | B-CQ, B-EC | Must |
 | RL-6 | 0 values are released without a durable record. If the audit row (or, for tokens, the token hash) cannot be written, the caller gets an error and no value. | Inject a storage fault and assert the response contains no value | P (0 tokens without a record), B-AI | Gate |
+| RL-7 | After a restart of the server or the database, 0 acknowledged writes are missing (audit rows, token hashes, outcomes, the meter). Up to 24 hours of writes may be lost in a disaster restored from the daily backup [src user, 2026-10-17]. | Write, restart each, count rows; restore test of the latest backup | RL-4, RL-6, VR-10 | Must |
 
 ### 3.6 Observability (OB-)
 
 | ID | Requirement | Verified by | Trace | Priority |
 |---|---|---|---|---|
-| OB-1 | `GET /health` returns pool level, the low and high marks, and upstream status (ok, degraded, failing or misconfigured with time of last success) in ≤ 200 ms [prop]. | Request against a running instance in each state | B-CQ, FR-5.7 | Must |
+| OB-1 | `GET /health` returns pool level, the low and high marks, and upstream status (ok, degraded, failing or misconfigured with time of last success) in ≤ 200 ms [prop], with the age of the report it shows. If the last report is older than 15 s [prop] it says "not reporting". | Request against a running instance in each state, including a stopped server | B-CQ, FR-5.7, OB-9 | Must |
 | OB-2 | 100% of log lines are structured (parse as JSON) and carry timestamp, level, event, and client id when known; each tool-call line also carries its duration in ms. | Capture logs across the test suite and parse each line; assert every tool-call line has a duration | B-CQ, KEY_METRICS | Must |
 | OB-3 | 0 issued values appear in logs, traces, error messages or HTTP error bodies, in raw, hex or base64 form. Checked over the golden-set run and the load test. | Committed test captures all output and greps for every value returned | B-SEC | Gate |
 | OB-4 | A metrics endpoint exposes at least: pool level, upstream requests per 10 s, budget used, calls per tool, errors per code, tool-call duration (p50, p95, p99). | Request the endpoint and check the 6 series are present | B-CQ, KEY_METRICS | Must |
@@ -255,6 +258,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | OB-6 | Every `POST /verify` records exactly 1 outcome, one of `redeemed`, `already_used`, `expired`, `unknown` or `rate_limited`, with owner and timestamp and never the value presented. A daily count per outcome can be read from storage. | Test: one attempt per outcome; row count equals attempts; grep records for the presented values, 0 matches | KEY_METRICS, FR-2.4–2.6, AZ-6, CP-3 | Must |
 | OB-7 | The agent checks every reply it sends against the values tools returned in that conversation and records one count per reply: values found, values backed by a tool return. Any unbacked value is logged as an event (without the value). | Test with a mocked model that invents a code: the event is logged and the count is 1; with an honest model the count is 0 | KEY_METRICS, EV-2, B-AI | Must |
 | OB-8 | The log carries an event when the pool first cannot cover a call and an event when the resulting error is returned, so the time between them can be read from logs. | Mock holds 429; both events present with timestamps; the gap matches RL-1 | KEY_METRICS, RL-1 | Must |
+| OB-9 | The server writes its pool level, marks and upstream status to the database every 5 s [prop] while it runs, so the hosted `/health` can show them even though the pool lives in the server's memory [src user, 2026-10-17]. The report holds no entropy and no value. | Run a server; read the report twice 5 s apart; scan it for pooled bytes (0 matches); stop the server and see OB-1 say "not reporting" within 15 s | OB-1, FR-5.7, CP-2 | Must |
 
 ### 3.7 Compliance and data handling (CP-)
 
@@ -362,7 +366,11 @@ Every **[prop]** and **[tbd]** number. Status is *accepted*, *revised*, or *pend
 | SC-1 | Low 32 KiB, high 128 KiB | Fetch size 64 KiB fits (32 + 64 < 128); a restart wastes ≤ 128 KiB = 1.25% of budget | pending review |
 | RL-1, RL-3 | 2 s | Short enough that a conversation does not hang | pending review |
 | RL-5 | 1,000 malformed inputs | Broad enough to cover each validation branch | pending review |
-| OB-1 | `/health` ≤ 200 ms | Cheap in-memory read | pending review |
+| OB-1 | `/health` ≤ 200 ms; "not reporting" after 15 s | Cheap read of one row; 15 s = 3 missed reports | pending review |
+| OB-9 | Status report every 5 s | Cheap, and fresh enough for a health view | pending review |
+| PF-1 | Database on the same host as the server | Audit write sits in the call path; a remote database costs 50–300 ms | pending review |
+| PF-5 | ≤ 1 s at p95 for verify, admin and metrics | Not live interactions; 1 s keeps the user's flow | pending review |
+| DE-1 | One live server process at a time | The 30 per 10 s limit is per account; one builder, mock for tests | pending review |
 | OB-5 | Alert at 80% of budget | Leaves 2,048 KiB to act on, from 10,240 × 20% | pending review |
 | CP-4 | TLS 1.2 or higher | Widely supported minimum | pending review |
 | CP-5 | Demo values ≤ 10 minutes | Limits exposure through the model provider | pending review |
@@ -384,3 +392,4 @@ Every **[prop]** and **[tbd]** number. Status is *accepted*, *revised*, or *pend
 8. **Confirm with Qrypt** (from `USERS_handoff.md`): whether the random bytes are "Qrypt Properties", whether pooling is allowed, the true rate ceiling, whether the portal shows per-token usage, and SP 800-90B status. Trial terms may be withdrawn (Terms 3.3) or changed (10.4).
 9. **Schedule.** The brief timeboxes 2 days and the PRD 2–3 days; the owner's deadline is Tue 2026-10-20 with one builder and nothing cut. About 100 rows is a large surface for one person. If the story estimate does not fit, flag the tradeoff to the owner rather than dropping a core item.
 10. **Redemption request shape** (Assumption 3): owner plus value presented, to be confirmed in architecture.
+11. **Who writes the token hash.** AZ-3 reads as if the agent holds an insert-only database credential; `HIGH_LEVEL_DESIGN.md` assumes the server writes the hash inside `generate_token` (with owner and expiry as arguments). Confirm in architecture, then reword AZ-3 if needed.

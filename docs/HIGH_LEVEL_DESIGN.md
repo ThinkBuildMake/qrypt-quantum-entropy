@@ -238,6 +238,8 @@ Exact prices and free-tier terms are in `STACK.md`. Two things could break $0: a
 
 ## 7. Open questions and upstream fixes
 
+*Already written into `REQUIREMENTS.md`: PF-1 (database location), PF-4 (10 s wait), PF-5 (1 s routes), RL-7 (backups), OB-1 and OB-9 (status report), VR-7 (shared meter), DE-1 (one live process), open item 11 (token hash writer). The table keeps the reasoning.*
+
 | Item | Why it matters | Resolved by |
 |---|---|---|
 | **PF-1 needs the database's location.** Across a region a database write takes ≈ 50–300 ms (ladder), and every call writes an audit row before returning, so a remote database breaks "p95 < 50 ms" in live use | PF-1 would pass in the test and fail in the demo | Add to PF-1: the database is on the same host or region as the MCP server. Owner confirms how the demo is run |
