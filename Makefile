@@ -28,7 +28,7 @@ GATE_P95_MS ?= 50
 export GATE_P95_MS
 
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles mcp-list mcp-call report test lint gate \
-        check-imports check-language secret-scan run-http
+        check-imports check-language secret-scan run-http config-show
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -84,6 +84,9 @@ run-http: ## serve the stub HTTP service locally on :8000
 
 report: ## print the nine metrics panels
 	$(UV) python -m qrypt_entropy.transport.report_cli
+
+config-show: ## print the effective settings, secrets redacted
+	@$(UV) python scripts/config_show.py
 
 lint: ## ruff
 	$(UV) ruff check .

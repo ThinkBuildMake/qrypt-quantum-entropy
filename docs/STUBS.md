@@ -19,8 +19,7 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.meter` | `mark_batch` | S07 | S20 |
 | `qrypt_entropy.service.meter` | `get_usage` | S24 | S34 |
 | `qrypt_entropy.service.meter` | `set_budget` | S24 | S34 |
-| `qrypt_entropy.upstream.source` (`upstream/source.py`) | `fetch` | S08 | S20 |
-| `qrypt_entropy.upstream.source` | `request_stats` | S09 | S35 |
+| `qrypt_entropy.upstream.source` (`upstream/source.py`) | _none: `fetch` and `request_stats` are real since S08 (no retry or rate limit until S09); mock in `tests/mock_qrypt.py`_ | S08 | S20 |
 | `qrypt_entropy.service.pool` (`service/pool.py`) | `take` | S10 (S11 failure paths) | S20 |
 | `qrypt_entropy.service.pool` | `status` | S10 | S35 |
 | `qrypt_entropy.service.pool` | `start` | S12 | S20 |

@@ -16,7 +16,11 @@ async def test_pool_and_source_stubs_keep_their_contract_bounds():
     assert len(taken.bytes) == 4 and taken.slices[0].byte_count == 4
     with pytest.raises(TemporarilyUnavailable):
         await pool.take(0)
-    assert len((await source.fetch(1)).bytes) == 1024
+    source.use_source(source.TestSource())  # the real client needs a network; S08 owns its tests
+    try:
+        assert len((await source.fetch(1)).bytes) == 1024
+    finally:
+        source.use_source(None)
     with pytest.raises(InvalidArgument):
         await source.fetch(513)
     assert pool.status().high_mark_bytes == 131072

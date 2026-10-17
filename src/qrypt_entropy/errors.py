@@ -57,3 +57,17 @@ class BudgetExhausted(AppError):
 
 class TemporarilyUnavailable(AppError):
     code = "temporarily_unavailable"
+
+
+class Misconfigured(AppError):
+    """Upstream 401: the Qrypt token is invalid or expired (DE-5)."""
+
+    code = "upstream_misconfigured"
+
+
+class AllotmentUsed(BudgetExhausted):
+    """Upstream 403: the Qrypt allotment is used (RL-2)."""
+
+
+class Unavailable(TemporarilyUnavailable):
+    """Upstream 5xx, timeout or connection failure (DE-4, RL-2)."""
