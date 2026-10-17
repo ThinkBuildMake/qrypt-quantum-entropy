@@ -30,7 +30,7 @@ Not decorated but also provisional:
 
 | Item | State | Replaced by |
 |---|---|---|
-| `service/report.py` panels fed from logs or server reports (5 of 9) | always "no data" | S19 (logs), S28 (reports); table-fed panels refined by S18 |
+| `service/report.py` panels fed from logs or server reports (5 of 9) | always "no data" | S19 (logs), S28 (reports); table-fed panels real since S18 (S33 and S20 replace the writers of their rows) |
 | Database roles, grants, guard triggers (append-only, meter-only-rises, one-way used flag) | real since S02: migration `s02_dbpolicy` (roles have no password until `scripts/set_role_passwords.py` runs; tables stay owned by whoever runs the migration, see DEVIATIONS 9) | done |
 | Test keys `stub-client-key`, `stub-admin-key` | constants in `service/access.py`; accepted only when `tests/conftest.py` has inserted credential rows for them (S05 made Access real: HMAC-hashed keys in `credentials`, revocation, `createClient` / `revokeClient`). The MCP start check on connect and every call is still S06 | S06 |
 | `service/pool.py` module-level `take`/`status` | still stubs: the real `Pool` class (S10: take, status, stop, background refill) is built and tested but not yet instantiated by the server, so issuance keeps its synthetic bytes | S20 wires a running `Pool` in and removes them |
