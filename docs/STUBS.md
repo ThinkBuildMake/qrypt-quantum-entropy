@@ -15,9 +15,7 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.access` | `create_credential` | S05 | S20 |
 | `qrypt_entropy.service.access` | `create_client` | S24 | S34 |
 | `qrypt_entropy.service.access` | `revoke_client` | S24 | S34 |
-| `qrypt_entropy.service.meter` (`service/meter.py`) | `reserve` | S07 | S20 |
-| `qrypt_entropy.service.meter` | `mark_batch` | S07 | S20 |
-| `qrypt_entropy.service.meter` | `get_usage` | S24 | S34 |
+| `qrypt_entropy.service.meter` (`service/meter.py`) | `get_usage` | S24 | S34 |
 | `qrypt_entropy.service.meter` | `set_budget` | S24 | S34 |
 | `qrypt_entropy.upstream.source` (`upstream/source.py`) | _none: `fetch` and `request_stats` are real since S08 (no retry or rate limit until S09); mock in `tests/mock_qrypt.py`_ | S08 | S20 |
 | `qrypt_entropy.service.pool` (`service/pool.py`) | `take` | S10 (S11 failure paths) | S20 |
@@ -47,3 +45,7 @@ Not decorated but also provisional:
 | Stub keys `stub-client-key`, `stub-admin-key` | fixed test keys inside `service/access.py` | S05, S06 |
 | `transport/http_app.py` and `transport/mcp_server.py` | real transports; their routes and tools call the stub modules above | each wiring story as listed |
 | `storage/db.py` | pool helper, unused by the stubs | S04 (restart recovery), then modules |
+
+S07 (done): `meter.reserve` and `meter.mark_batch` are real and use the database. The callers (Pool, Entropy source) are
+still stubs, so nothing in the running flows calls them until S10 and S20. The 80% and 100% "once" guard for refusals is
+kept per process (a reserve that crosses a threshold logs it exactly once across all processes).

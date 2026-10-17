@@ -24,7 +24,6 @@ async def test_pool_and_source_stubs_keep_their_contract_bounds():
     with pytest.raises(InvalidArgument):
         await source.fetch(513)
     assert pool.status().high_mark_bytes == 131072
-    assert meter.reserve(0, "refill", "qrypt").kib == 1
     assert meter.get_usage()["budget"] == {"capKib": 10240, "usedKib": 0}
     assert BudgetExhausted("x").http_status == 503
 
