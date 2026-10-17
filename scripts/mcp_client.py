@@ -16,9 +16,10 @@ from mcp.client.stdio import StdioServerParameters
 
 
 def server_params() -> StdioServerParameters:
+    key = os.environ.get("CLIENT_KEY") or os.environ.get("MCP_CLIENT_KEY")  # no default: a missing key is refused
     env = {
         "PATH": os.environ.get("PATH", ""),
-        "MCP_CLIENT_KEY": os.environ.get("MCP_CLIENT_KEY", "stub-client-key"),
+        **({"MCP_CLIENT_KEY": key} if key else {}),
         "LOG_FILE": os.environ.get("LOG_FILE", "logs/server.log"),
         **{
             k: os.environ[k]
@@ -74,7 +75,12 @@ if __name__ == "__main__":
     if sys.argv[1:2] == ["raw"]:
         sys.exit(raw_session())
     if sys.argv[1:2] == ["list"]:
-        sys.exit(asyncio.run(list_tools()))
-    if sys.argv[1:2] == ["call"] and len(sys.argv) == 4:
-        sys.exit(asyncio.run(call_tool(sys.argv[2], sys.argv[3])))
-    sys.exit("usage: mcp_client.py list | call TOOL JSON_ARGS")
+        run = list_tools()
+    elif sys.argv[1:2] == ["call"] and len(sys.argv) == 4:
+        run = call_tool(sys.argv[2], sys.argv[3])
+    else:
+        sys.exit("usage: mcp_client.py list | call TOOL JSON_ARGS")
+    try:
+        sys.exit(asyncio.run(run))
+    except Exception:  # a refused key closes the connection; the server's reason is on stderr above
+        sys.exit("connection refused by the server (see its message above)")

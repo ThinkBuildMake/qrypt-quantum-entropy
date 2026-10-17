@@ -10,7 +10,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import ValidationError
 
 from qrypt_entropy.config import MCP_SERVER_SECRETS, ConfigError, get_settings
-from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable
+from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable, Unauthorized
 from qrypt_entropy.logs import configure_logging, get_logger, register_secret
 from qrypt_entropy.models import IssuedValue, Principal
 from qrypt_entropy.service import access, issuance
@@ -101,9 +101,11 @@ def main() -> int:
         log.error("start_refused", cause=str(err))
         return 1
     try:
+        if not settings.mcp_client_key:
+            raise Unauthorized("no client key: set MCP_CLIENT_KEY in the server's environment")
         access.authenticate(settings.mcp_client_key, {"client"})
     except AppError as err:
-        log.error("connect_refused", error=err.code)
+        log.error("connect_refused", error=err.code, cause=err.message)
         return 1
     log.info("server_started", env=settings.app_env)
     try:
