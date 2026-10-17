@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "qrypt-entropy": {
+      "command": "uv",
+      "args": ["run", "--directory", "/ABSOLUTE/PATH/TO/qrypt-quantum-entropy", "python", "-m", "qrypt_entropy.transport.mcp_server"],
+      "env": {
+        "MCP_CLIENT_KEY": "stub-client-key"
+      }
+    }
+  }
+}

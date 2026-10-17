@@ -1,3 +1,12 @@
 .claude/
 .lazy/
 .claude/worktrees/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+logs/
+.env

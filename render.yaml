@@ -1,0 +1,24 @@
+# Render Blueprint: the stub HTTP service on the free web service plus a free Postgres 18 (GC-9, CP-4).
+# Render terminates TLS and redirects plain HTTP to HTTPS for web services (verify with `curl -sI http://...`).
+services:
+  - type: web
+    name: qrypt-entropy
+    runtime: python
+    plan: free
+    healthCheckPath: /health
+    buildCommand: pip install uv && uv sync --frozen --no-dev
+    # The free plan has no pre-deploy command, so migrations run at start. They are safe to run twice.
+    startCommand: uv run --frozen --no-dev alembic upgrade head && uv run --frozen --no-dev uvicorn qrypt_entropy.transport.http_app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.14"
+      - key: APP_ENV
+        value: prod
+      - key: DATABASE_URL
+        fromDatabase:
+          name: qrypt-db
+          property: connectionString
+databases:
+  - name: qrypt-db
+    plan: free
+    postgresMajorVersion: "18"
