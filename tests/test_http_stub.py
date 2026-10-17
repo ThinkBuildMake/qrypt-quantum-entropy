@@ -19,11 +19,6 @@ def test_ac3_health_has_contract_fields(http):
     assert set(body["pool"]) == {"levelBytes", "lowMarkBytes", "highMarkBytes"}
 
 
-def test_ac5_verify_success_shape(http):
-    r = http.post("/verify", headers=CLIENT, json={"owner": "user-42", "value": "123456"})
-    assert (r.status_code, r.json()) == (200, {"outcome": "redeemed"})
-
-
 def test_ac5_usage_and_issuance_shapes(http):
     usage = http.get("/admin/usage", headers=ADMIN).json()
     assert set(usage) == {"budget", "perClient"}

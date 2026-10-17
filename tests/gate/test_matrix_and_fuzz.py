@@ -87,7 +87,9 @@ async def test_ac10_authorization_matrix_over_every_tool_and_route():
                 method, sample_path(route.path, existing_client), headers=headers, json=sample_body(route)
             )
             allowed = roles is None or ROLE_OF[who] in roles
-            assert (resp.status_code < 400) == allowed, (method, route.path, who, resp.status_code)
+            # /verify answers a refusal outcome (404 for the sample body) once the caller is authorized
+            passed = resp.status_code in (200, 404) if route.path == "/verify" else resp.status_code < 400
+            assert passed == allowed, (method, route.path, who, resp.status_code)
             if not allowed:
                 assert resp.status_code == (401 if who == "none" else 403)
             cells += 1

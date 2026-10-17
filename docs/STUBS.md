@@ -21,6 +21,7 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.issuance` | `generate_token` | S15 | S20 |
 | `qrypt_entropy.service.issuance` | `get_issuance` | S23 | S33 |
 | `qrypt_entropy.service.tokens` | `redeem` | S21 (S22 rate limit) | S33 |
+| `qrypt_entropy.service.issuance` | `call_stats` | S28 | S35 |
 | `qrypt_entropy.service.status` (`service/status.py`) | `get_health` | S29 | S35 |
 | `qrypt_entropy.service.status` | `get_metrics` | S30 | S35 |
 | `qrypt_entropy.service.status` | `report_once` | S28 | S35 |
@@ -53,3 +54,4 @@ and refuses a non-local database; it needs `KEY_HASH_SECRET` in the environment 
 S17 (done): `scripts/seed.py` (`make seed`, `make seed-list-names`) creates the admin, `billing-agent` and `support-agent` through
 `Access.create_credential` and three seed tokens through `Tokens.storeSeedToken`, with no entropy source. It needs
 `KEY_HASH_SECRET` and `TOKEN_PEPPER` in the environment. It owns no stubs, so the stub tables above are unchanged.
+S21 (done): `tokens.redeem` is real (one conditional UPDATE on `used_at` per candidate, outcome row in the same transaction); `POST /verify` answers 200/404/409/410. S22 adds the failed-attempt limit and the 429 `rate_limited` outcome. S33 wires the redeemer flow end to end.

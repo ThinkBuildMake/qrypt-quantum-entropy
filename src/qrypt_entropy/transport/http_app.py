@@ -26,6 +26,7 @@ for _secret in get_settings().secret_values():
     register_secret(_secret)
 log = get_logger("http")
 _BEARER = re.compile(r"^Bearer (\S+)$")
+REFUSAL_STATUS = {"unknown": 404, "already_used": 409, "expired": 410}  # S22 adds rate_limited: 429
 
 
 def require_roles(*roles: str) -> Callable:
@@ -42,7 +43,7 @@ def require_roles(*roles: str) -> Callable:
 
 
 class VerifyBody(BaseModel):
-    owner: str = Field(min_length=1, max_length=256)
+    owner: str = Field(min_length=1, max_length=256, pattern=r"^[^\x00]*$")  # Postgres text cannot hold NUL
     value: str = Field(min_length=1, max_length=4096)
 
 
@@ -107,8 +108,12 @@ def metrics() -> str:
 
 
 @app.post("/verify", dependencies=[Depends(require_roles("client", "admin"))])
-def verify(body: VerifyBody) -> dict:
-    return {"outcome": tokens.redeem(body.owner, body.value)}
+def verify(body: VerifyBody) -> JSONResponse:
+    outcome = tokens.redeem(body.owner, body.value)
+    if outcome == "redeemed":
+        return JSONResponse({"outcome": outcome})
+    refusal = {"error": outcome, "message": "the code was not redeemed", "outcome": outcome}
+    return JSONResponse(refusal, status_code=REFUSAL_STATUS[outcome])
 
 
 @app.get("/admin/usage", dependencies=[Depends(require_roles("admin"))])

@@ -1,7 +1,9 @@
 """Tokens: redeemable tokens and redemption. Owns `tokens`, `redemption_outcomes`.
 
 S16 builds the write path: `hash_token`, `store_token`, `store_seed_token` and the single constant-time hash
-comparison `hashes_equal`. S01 STUB: `redeem` always says `redeemed`. Real: S21 (redeem), S22 (rate limit).
+comparison `hashes_equal`. S21 builds `redeem`: a conditional UPDATE sets `used_at` only while the
+token is unused and unexpired (database clock), so two simultaneous redemptions give one `redeemed` (VR-4).
+S22 adds the rate limit.
 Only a keyed hash of a token is ever stored; the plain value and the pepper are never written or logged.
 """
 
@@ -12,7 +14,6 @@ import uuid
 from qrypt_entropy.config import get_settings
 from qrypt_entropy.errors import AppError, InvalidArgument
 from qrypt_entropy.storage import db
-from qrypt_entropy.stubs import stub
 
 MAX_OWNER_LENGTH = 256
 
@@ -54,6 +55,31 @@ def store_seed_token(owner: str, kind: str, value: str, expiry_seconds: int) -> 
         _insert(conn, None, owner, kind, value, expiry_seconds)
 
 
-@stub("S21")
 def redeem(owner: str, value: str) -> str:
-    return "redeemed"
+    """Redeem the owner's token for `value`; record exactly one outcome (never the value) in the same transaction."""
+    presented = hash_token(owner, value)
+    with db.connection() as conn:
+        rows = conn.execute(
+            "SELECT id, token_hash FROM tokens WHERE owner = %s ORDER BY expires_at", (owner,)
+        ).fetchall()
+        matches = [row[0] for row in rows if hashes_equal(bytes(row[1]), presented)]
+        token_id, outcome = None, "unknown"
+        for candidate in matches:
+            if conn.execute(
+                "UPDATE tokens SET used_at = clock_timestamp()"
+                " WHERE id = %s AND used_at IS NULL AND expires_at > clock_timestamp() RETURNING id",
+                (candidate,),
+            ).fetchone():
+                token_id, outcome = candidate, "redeemed"
+                break
+        if matches and token_id is None:
+            states = conn.execute(
+                "SELECT id, used_at IS NOT NULL FROM tokens WHERE id = ANY(%s)", (matches,)
+            ).fetchall()
+            token_id, used = next((s for s in states if s[1]), states[0])
+            outcome = "already_used" if used else "expired"
+        conn.execute(
+            "INSERT INTO redemption_outcomes (id, token_id, owner, outcome) VALUES (%s, %s, %s, %s)",
+            (uuid.uuid4(), token_id, owner, outcome),
+        )
+    return outcome

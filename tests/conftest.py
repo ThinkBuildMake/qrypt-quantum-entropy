@@ -17,6 +17,7 @@ from qrypt_entropy.stubs import seed_stub_batch
 from tests.test_migrations import migrate
 
 os.environ.setdefault("KEY_HASH_SECRET", "test-only-key-hash-secret")  # not a real secret
+os.environ.setdefault("TOKEN_PEPPER", "test-only-token-pepper")  # not a real secret
 
 GATE_STATS: dict[str, str] = {}
 
