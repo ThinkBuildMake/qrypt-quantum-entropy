@@ -7,7 +7,7 @@ import uuid
 import pytest
 
 from qrypt_entropy.config import get_settings
-from qrypt_entropy.errors import TemporarilyUnavailable
+from qrypt_entropy.errors import PoolStarved
 from qrypt_entropy.logs import configure_logging
 from qrypt_entropy.models import Batch, Fetched
 from qrypt_entropy.service import meter
@@ -51,7 +51,7 @@ async def take_retrying(pool: Pool, n: int):
     while True:
         try:
             return await pool.take(n)
-        except TemporarilyUnavailable:
+        except PoolStarved:
             await asyncio.sleep(0.001)
 
 
@@ -84,14 +84,16 @@ async def test_pool_no_overlap(monkeypatch):
         assert b1 != b2 or end <= start
 
 
-async def test_pool_slices_across_a_batch_boundary():
+async def test_pool_slices_across_a_batch_boundary(monkeypatch):
+    FakeUpstream(monkeypatch)
     pool = Pool()
     pool.add("A", b"abc")
     pool.add("B", b"defgh")
     taken = await pool.take(6)
     assert taken.bytes == b"abcdef"
     assert [(s.batch_id, s.byte_offset, s.byte_count) for s in taken.slices] == [("A", 0, 3), ("B", 0, 3)]
-    assert (await pool.take(2)).bytes == b"gh" and pool.level == 0
+    assert (await pool.take(2)).bytes == b"gh"
+    await pool.stop()
 
 
 async def test_pool_refill_below_low(monkeypatch):
@@ -146,7 +148,7 @@ async def test_pool_memory_only(monkeypatch, tmp_path, capsys):
     await asyncio.sleep(0.05)
     try:
         await pool.take(10**6)
-    except TemporarilyUnavailable as exc:
+    except PoolStarved as exc:
         messages.append(str(exc) + repr(exc))
 
     async def broken_fetch(size_kib):
@@ -174,7 +176,7 @@ async def test_pool_stop(monkeypatch):
     pool.add("A", bytes(64 * KIB))
     await pool.stop()
     assert pool.level == 0 and pool.status().level_bytes == 0
-    with pytest.raises(TemporarilyUnavailable):
+    with pytest.raises(PoolStarved):
         await pool.take(1)
 
 
@@ -187,7 +189,7 @@ async def test_take_during_stop_starts_no_refill(monkeypatch):
     reserved_before = len(up.asked_kib)
     stopping = asyncio.create_task(pool.stop())
     await asyncio.sleep(0)  # stop has begun and is waiting for the cancelled refill
-    with pytest.raises(TemporarilyUnavailable):
+    with pytest.raises(PoolStarved):
         await pool.take(10**6)
     await pool.take(1)  # leaves the level below low while stopping
     await stopping

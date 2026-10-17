@@ -42,3 +42,5 @@ Not decorated but also provisional:
 S07 (done): `meter.reserve` and `meter.mark_batch` are real and use the database. The callers (Pool, Entropy source) are
 still stubs, so nothing in the running flows calls them until S10 and S20. The 80% and 100% "once" guard for refusals is
 kept per process (a reserve that crosses a threshold logs it exactly once across all processes).
+
+S11 (done): `Pool.take` waits up to 2 s for a refill and then raises `PoolStarved` (code = reason: `temporarily_unavailable`, `budget_exhausted` or `upstream_misconfigured`); a failed refill is retried after a growing pause (0.5 s doubling to 10 s, with jitter) instead of at once; the `pool_cannot_cover` and `pool_error_returned` events (OB-8) are logged. `RateLimited` was added to `errors.py` with the same definition S09 uses. The module-level `take`/`status` stubs are unchanged (S20 and S35).

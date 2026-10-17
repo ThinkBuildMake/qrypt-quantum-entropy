@@ -75,3 +75,11 @@ class Unavailable(TemporarilyUnavailable):
 
 class RateLimited(TemporarilyUnavailable):
     """Upstream 429 persisted after the backoff rules (DE-3)."""
+
+
+class PoolStarved(AppError):
+    """The pool cannot cover a call. The code is the caller-facing reason (ARCHITECTURE: Pool)."""
+
+    def __init__(self, message: str, reason: str = "temporarily_unavailable"):
+        super().__init__(message, reason)
+        self.reason = reason

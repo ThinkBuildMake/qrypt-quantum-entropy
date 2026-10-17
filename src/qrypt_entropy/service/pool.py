@@ -2,15 +2,16 @@
 
 `Pool` (S10) is the real pool: it hands each byte out once and refills itself in the background. The module-level
 `take`/`status` below stay S01 stubs (fixed pattern, not entropy, so a stub value is recognisable) until S20 wires a
-running `Pool` into the flows. S11 adds the failure paths and the wait for a refill, S12 start and the startup check.
+running `Pool` into the flows. S11 adds the wait for a refill and the failure paths; S12 adds start.
 Pooled bytes live in this process's memory only (CP-2): never written to a file, a log or an error message (OB-3).
 """
 
 import asyncio
+import random
 from collections import deque
 
 from qrypt_entropy.config import get_settings
-from qrypt_entropy.errors import TemporarilyUnavailable
+from qrypt_entropy.errors import BudgetExhausted, Misconfigured, PoolStarved, TemporarilyUnavailable, Unavailable
 from qrypt_entropy.logs import get_logger
 from qrypt_entropy.models import BatchSlice, PoolStatus, Taken
 from qrypt_entropy.service import meter
@@ -20,6 +21,17 @@ from qrypt_entropy.upstream import source
 log = get_logger("qrypt_entropy.pool")
 KIB = 1024
 REFILL_KIB = 64  # PF-3
+WAIT_S = 2.0  # RL-1, RL-3: how long a take waits for a refill
+BACKOFF_BASE_S, BACKOFF_MAX_S = 0.5, 10.0  # between failed refills, doubled each time, with jitter (DE-3)
+
+
+def reason_for(exc: Exception) -> str:
+    """The caller-facing reason for an Entropy source or Meter error (ARCHITECTURE: Pool)."""
+    if isinstance(exc, BudgetExhausted):  # includes AllotmentUsed
+        return "budget_exhausted"
+    if isinstance(exc, Misconfigured):
+        return "upstream_misconfigured"
+    return "temporarily_unavailable"
 
 
 class Pool:
@@ -33,6 +45,9 @@ class Pool:
         self._level = 0
         self._refill: asyncio.Task | None = None
         self._stopped = False
+        self._waiting: list[int] = []  # sizes of the takes now waiting for a refill
+        self._error: Exception | None = None  # why the latest refill failed; cleared by the next success
+        self._changed = asyncio.Event()  # set (and replaced) whenever bytes arrive, a refill fails or the pool stops
 
     @property
     def level(self) -> int:
@@ -43,12 +58,11 @@ class Pool:
         self._level += len(data)
 
     async def take(self, n: int) -> Taken:
-        """Remove n bytes in one step, or none (VR-8). S11 replaces the immediate failure with a wait."""
+        """Remove n bytes in one step, or none (VR-8). Waits up to WAIT_S for a refill to cover them (RL-3)."""
         if n < 1:
             raise TemporarilyUnavailable("cannot take fewer than one byte")
         if n > self._level:
-            self._ensure_refill()
-            raise TemporarilyUnavailable("the pool cannot cover this call yet")
+            await self._wait_to_cover(n)
         out, slices = bytearray(), []
         while len(out) < n:
             chunk = self._chunks[0]
@@ -64,12 +78,46 @@ class Pool:
             self._ensure_refill()
         return Taken(bytes(out), slices)
 
+    async def _wait_to_cover(self, n: int) -> None:
+        """Return once the pool holds n bytes, or raise PoolStarved. Removes nothing."""
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        log.warning("pool_cannot_cover", wanted_bytes=n, level_bytes=self._level)
+        self._waiting.append(n)
+        try:
+            async with asyncio.timeout(WAIT_S):
+                while n > self._level:
+                    if self._stopped:
+                        raise PoolStarved("the pool is stopped")
+                    self._ensure_refill()
+                    if self._error is not None and reason_for(self._error) != "temporarily_unavailable":
+                        raise PoolStarved("the pool cannot be refilled", reason_for(self._error))
+                    await self._changed.wait()
+        except TimeoutError:
+            exc = PoolStarved(
+                "the pool could not be refilled in time",
+                reason_for(self._error) if self._error else "temporarily_unavailable",
+            )
+        except PoolStarved as err:
+            exc = err
+        else:
+            return
+        finally:
+            self._waiting.remove(n)
+        log.warning("pool_error_returned", reason=exc.reason, wanted_bytes=n, waited_s=round(loop.time() - started, 3))
+        raise exc
+
+    def _notify(self) -> None:
+        changed, self._changed = self._changed, asyncio.Event()
+        changed.set()
+
     def status(self) -> PoolStatus:
         return PoolStatus(self._level, self.low, self.high, "ok", None)
 
     async def stop(self) -> None:
         """End the refill loop and discard what the pool holds."""
         self._stopped = True  # before awaiting: a take during the cancel must not start a new refill
+        self._notify()
         task, self._refill = self._refill, None
         if task is not None:
             task.cancel()
@@ -82,8 +130,9 @@ class Pool:
             self._refill = asyncio.get_running_loop().create_task(self._refill_loop())
 
     async def _refill_loop(self) -> None:
-        """At most one runs at a time. Ends on the first failure; the next take starts another (S11 adds backoff)."""
-        while self._level < self.low:
+        """At most one runs at a time. A failure is recorded for waiting takes, then retried after a growing pause."""
+        failures = 0
+        while self._level < max([self.low, *self._waiting]) and not self._stopped:
             headroom_kib = (self.high - self._level) // KIB
             if headroom_kib < 1:
                 return
@@ -91,19 +140,30 @@ class Pool:
             try:
                 batch = meter.reserve(min(REFILL_KIB, headroom_kib), "refill", "qrypt")
                 fetched = await source.fetch(batch.kib)
+                if len(fetched.bytes) != batch.kib * KIB:
+                    raise Unavailable("the entropy source sent the wrong amount")
+                if self._stopped:
+                    meter.mark_batch(batch.batch_id, "failed")
+                    log.warning("pool_refill_discarded", reason="stopped")
+                    return
             except BaseException as exc:
                 if batch is not None:
                     meter.mark_batch(batch.batch_id, "failed")
-                if isinstance(exc, Exception):
-                    log.warning("pool_refill_failed", error=type(exc).__name__)
-                    return
-                raise
-            if len(fetched.bytes) != batch.kib * KIB or self._stopped:
-                meter.mark_batch(batch.batch_id, "failed")
-                log.warning("pool_refill_discarded", reason="stopped" if self._stopped else "wrong_size")
-                return
+                if not isinstance(exc, Exception):
+                    raise
+                failures += 1
+                self._error = exc
+                delay = min(BACKOFF_MAX_S, BACKOFF_BASE_S * 2 ** (failures - 1)) * random.uniform(0.5, 1)  # noqa: S311
+                log.warning(
+                    "pool_refill_failed", error=type(exc).__name__, attempt=failures, retry_in_s=round(delay, 2)
+                )
+                self._notify()
+                await asyncio.sleep(delay)
+                continue
+            failures, self._error = 0, None
             self.add(batch.batch_id, fetched.bytes)
             meter.mark_batch(batch.batch_id, "received")
+            self._notify()
 
 
 STUB_BATCH_ID = "00000000-0000-4000-8000-0000000000b1"
