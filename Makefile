@@ -27,7 +27,7 @@ export DATABASE_URL
 GATE_P95_MS ?= 50
 export GATE_P95_MS
 
-.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mcp-list mcp-call report test lint gate \
+.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mcp-list mcp-call report sample-metrics test lint gate \
         test-db-restart check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
@@ -88,8 +88,11 @@ mcp-call: db-up migrate ## call a tool: make mcp-call TOOL=get_random_bytes ARGS
 run-http: ## serve the stub HTTP service locally on :8000
 	$(UV) uvicorn qrypt_entropy.transport.http_app:app --port 8000
 
-report: ## print the nine metrics panels
+report: ## print the nine metrics panels: make report [LOG=calls.log] [SNAPSHOTS=snaps.json]
 	$(UV) python -m qrypt_entropy.transport.report_cli
+
+sample-metrics: ## scrape /metrics into snaps.json: make sample-metrics SECONDS=12 INTERVAL=5 [METRICS_URL= ADMIN_KEY= SNAPSHOTS=]
+	$(UV) python -m qrypt_entropy.transport.metrics_sampler
 
 config-show: ## print the effective settings, secrets redacted
 	@$(UV) python scripts/config_show.py

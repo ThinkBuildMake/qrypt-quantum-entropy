@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 import psycopg
 
+from qrypt_entropy.service import report_logs
+
 NO_DATA = "no data"
 
 
@@ -83,21 +85,16 @@ def _cap_use(conn):
     return f"{used:,} of {cap:,} KiB ({percent}), {side} the {alert:,} KiB alert level"
 
 
-def _no_reader_yet(conn):
-    """Log- and report-fed panels have no reader until S19 and S28 land."""
-    return NO_DATA
-
-
 PANELS: list[tuple[str, str, Callable]] = [
     ("codes never issued per day", "redemption_outcomes", _unknown_share),
-    ("replies with an unbacked value", "agent log (S19)", _no_reader_yet),
+    ("replies with an unbacked value", "agent log (LOG)", report_logs.unbacked_replies),
     ("tokens redeemed before expiry", "tokens", _redeemed_before_expiry),
-    ("tool-call p95", "server log (S19)", _no_reader_yet),
-    ("server-caused errors", "server_status.snapshot (S28)", _no_reader_yet),
-    ("Qrypt requests worst 10 s", "server_status.snapshot (S28)", _no_reader_yet),
+    ("tool-call p95", "server log (LOG)", report_logs.tool_call_p95),
+    ("server-caused errors", "snapshots (SNAPSHOTS)", report_logs.server_caused_errors),
+    ("Qrypt requests worst 10 s", "snapshots (SNAPSHOTS)", report_logs.worst_10_seconds),
     ("KiB per Qrypt request", "batches, issuances", _kib_per_request),
     ("Qrypt use against the cap", "budget, batches", _cap_use),
-    ("time to unavailable", "server log (S19)", _no_reader_yet),
+    ("time to unavailable", "server log (LOG)", report_logs.time_to_unavailable),
 ]
 
 

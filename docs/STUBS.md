@@ -32,6 +32,7 @@ Not decorated but also provisional:
 | Item | State | Replaced by |
 |---|---|---|
 | `service/report.py` panels fed from logs or server reports (5 of 9) | always "no data" | S19 (logs), S28 (reports); table-fed panels real since S18 (S33 and S20 replace the writers of their rows) |
+| `service/report.py` panels fed from logs or snapshots (5 of 9) | real since S19 (`service/report_logs.py`; `make report LOG= SNAPSHOTS=`; `make sample-metrics` writes snapshots). They read "no data" until the writers emit the **pinned names** below | S25, S27, S28, S30 emit the inputs; table-fed panels refined by S18 |
 | Database roles, grants, guard triggers (append-only, meter-only-rises, one-way used flag) | real since S02: migration `s02_dbpolicy` (roles have no password until `scripts/set_role_passwords.py` runs; tables stay owned by whoever runs the migration, see DEVIATIONS 9) | done |
 | Test keys `stub-client-key`, `stub-admin-key` | constants in `service/access.py`; accepted only when `tests/conftest.py` has inserted credential rows for them (S05 made Access real: HMAC-hashed keys in `credentials`, revocation, `createClient` / `revokeClient`). The MCP start check on connect and every call is still S06 | S06 |
 | `service/pool.py` module-level `take`/`status` | still stubs: the real `Pool` class (S10: take, status, stop, background refill) is built and tested but not yet instantiated by the server, so issuance keeps its synthetic bytes | S20 wires a running `Pool` in and removes them |
@@ -55,3 +56,7 @@ S17 (done): `scripts/seed.py` (`make seed`, `make seed-list-names`) creates the 
 `Access.create_credential` and three seed tokens through `Tokens.storeSeedToken`, with no entropy source. It needs
 `KEY_HASH_SECRET` and `TOKEN_PEPPER` in the environment. It owns no stubs, so the stub tables above are unchanged.
 S21 (done): `tokens.redeem` is real (one conditional UPDATE on `used_at` per candidate, outcome row in the same transaction); `POST /verify` answers 200/404/409/410. S22 adds the failed-attempt limit and the 429 `rate_limited` outcome. S33 wires the redeemer flow end to end.
+**Pinned names the S19 report reads (writers must emit exactly these):**
+- Log `tool_call` with `duration_ms` (real in `mcp_server.py`); `pool_error_returned` with `waited_s` (real since S11, `pool.py`; `pool_cannot_cover` is not read).
+- Agent log `reply_check` with `found` and `backed` (counts, never values), one per reply: S25 / S27 emit it.
+- `/metrics` series (S30): `qrypt_errors_total{code}`, `qrypt_calls_total{tool}`, `qrypt_upstream_requests_last_10s`, `qrypt_process_start_time_seconds` (the snapshot's `startedAt`).
