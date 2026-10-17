@@ -4,7 +4,7 @@
 
 ## Summary
 
-The system is three processes that share code: the MCP server (stdio, on the caller's machine), the HTTP service (hosted), and the command-line agent. They share one Postgres database through separate roles. The modules below are code libraries; the table says which process loads which.
+The system runs as three processes that share code: the MCP server (stdio, on the caller's machine), the HTTP service (hosted), and the command-line agent. They share one Postgres database through separate roles. The modules below are code libraries; the table says which process loads which.
 
 ```mermaid
 %%{init: {"layout": "elk", "flowchart": {"nodeSpacing": 40, "rankSpacing": 60}}}%%
@@ -46,6 +46,9 @@ flowchart LR
   meter -->|budget, batches| db
   tokens -->|tokens, redemption_outcomes| db
   status -->|server_status| db
+  status -->|read status and counters| pool
+  status -->|read counters| issuance
+  status -->|read counters| source
   access -->|credentials| db
 ```
 
@@ -65,7 +68,7 @@ Every module calls Access to check who is calling, so those arrows are left off.
 **Key decisions**
 
 - The audit row is written in the same database transaction as the token hash, before the value is returned (RL-6, FR-4.2).
-- Least privilege is enforced by database roles, not application code: the role that issues tokens can insert but not read the token table, and nobody the application runs as can update or delete an audit row (AZ-3, VR-10).
+- Least privilege is enforced by database roles and guards, not application code: the role that issues tokens can insert but not read the token table, nobody the application runs as can update or delete an audit row, the meter can only rise and a token's used flag can only be set once (AZ-3, VR-10, RL-4, VR-4).
 - Redemption is one conditional update that flips the used flag, so two simultaneous redemptions cannot both succeed (VR-4).
 - The budget meter lives in the database and counts KiB requested, so restarts and several server processes cannot reset or exceed it (RL-4, VR-7).
 - The hosted service cannot see the MCP server's memory, so the server reports pool level, upstream status and counters to the database every 5 s (OB-9, OB-4).
@@ -80,21 +83,21 @@ None — greenfield. No code or database exists yet.
 
 | # | Operation | Path | Sync / async | Committed before response? |
 |---|---|---|---|---|
-| D-1 | Connect (client key) | client launches MCP server with its key → Access.authenticate → initialize accepted or refused | sync | n/a |
+| D-1 | Connect (client key) | client launches MCP server with its key → Access.authenticate (client role only) → initialize accepted or refused | sync | n/a |
 | D-2 | `get_random_bytes` | client → Issuance → Access.authenticate → validate → Pool.take → insert `issuances`, `issuance_batches` → value and metadata | sync | yes |
 | D-3 | `random_int` | as D-2, with one or more Pool.take calls for rejection sampling | sync | yes |
 | D-4 | `generate_token` | as D-2, plus Tokens.storeToken in the same transaction when an owner is given | sync | yes |
 | D-5 | Chat turn | user → Agent → OpenRouter → Agent → MCP tool (D-2 to D-4) → Agent → OpenRouter → reply check → user | sync | yes (tool writes) |
 | D-6 | `verify` | redeemer → HTTP route → Access.authenticate → Tokens.redeem → insert `redemption_outcomes` and flip `tokens.used_at` → outcome | sync | yes |
-| D-7 | `getIssuance` | admin → HTTP route → Access.authenticate → Issuance.getIssuance → read `issuances`, `issuance_batches`, `batches`, `tokens` | sync | n/a |
-| D-8 | `getUsage` | admin → Access.authenticate → Meter.getUsage → read `budget`, `issuances` | sync | n/a |
+| D-7 | `getIssuance` | admin → HTTP route → Access.authenticate → Issuance.getIssuance → read `credentials`, `issuances`, `issuance_batches`, `batches`, `tokens` | sync | n/a |
+| D-8 | `getUsage` | admin → Access.authenticate → Meter.getUsage → read `budget`, `credentials`, `issuances` | sync | n/a |
 | D-9 | `createClient`, `revokeClient` | admin → Access.authenticate → Access write `credentials` | sync | yes |
 | D-10 | `setBudget` | admin → Access.authenticate → Meter.setBudget → update `budget` | sync | yes |
 | D-11 | `getHealth` | operator → Status.getHealth → read `server_status` | sync | n/a |
 | D-12 | `getMetrics` | operator → Access.authenticate → Status.getMetrics → read `server_status`, `budget` | sync | n/a |
 | D-13 | Pool refill (system) | Pool → Meter.reserve → Entropy source.fetch → Pool.add → Meter.markBatch | async background | yes (reservation) |
-| D-14 | Startup check (system) | Pool.start → Meter.reserve (1 KiB) → Entropy source.fetch → Status.report | async at start | yes |
-| D-15 | Status report (system) | timer in MCP server → Status.report → upsert `server_status` | async every 5 s | yes |
+| D-14 | Startup check (system) | Pool.start → Meter.reserve (1 KiB) → Entropy source.fetch → Pool.add | async at start | yes (reservation) |
+| D-15 | Status report (system) | timer in MCP server → reads Pool.status, Issuance.callStats, Entropy source.requestStats → upsert `server_status` | async every 5 s | yes |
 | D-16 | Budget alert (system) | Meter.reserve notices a threshold crossing → log event | inside D-13 | n/a |
 | D-17 | Reply check (system) | Agent → compares reply with tool returns → log event | sync, per reply | n/a |
 | D-18 | Backup (system) | CI schedule → dump of the database → encrypted → stored as a CI artifact | async daily | n/a |
@@ -159,19 +162,11 @@ sequenceDiagram
   participant A as Access
   participant T as Tokens
   participant DB as Database
-  R->>H: POST verify with owner and value, client key
+  R->>H: POST verify with owner and value, client or admin key
   H->>A: authenticate
   H->>T: redeem owner and value
-  T->>DB: count recent failures for owner
-  alt five or more in 10 minutes
-    T->>DB: insert outcome rate_limited
-    T-->>H: rate_limited
-  else under the limit
-    T->>DB: read this owner's tokens, compare hashes in constant time
-    T->>DB: conditional update used_at where unused and unexpired
-    T->>DB: insert outcome in the same transaction
-    T-->>H: redeemed or already_used or expired or unknown
-  end
+  T->>DB: one transaction reads the owner's tokens, flips the used flag if allowed, records the outcome
+  T-->>H: redeemed or already_used or expired or unknown or rate_limited
   H-->>R: HTTP status and outcome
 ```
 
@@ -207,11 +202,11 @@ One row per client or admin and its key.
 | name | text | no | | Human name, for example `billing-agent` |
 | role | text | no | | `admin` or `client` (more may be added) |
 | key_hash | bytea | no | | HMAC-SHA-256 of the key under a server-side secret. The key itself is never stored (AZ-5) |
-| status | text | no | `active` | `active` or `revoked` |
+| status | text | no | `active` | `active` or `revoked` (more may be added) |
 | created_at | timestamptz | no | now() | |
 | revoked_at | timestamptz | yes | | Set when revoked |
 
-- **Constraints:** unique `name`; unique `key_hash`; check `role` and `status` against their current values.
+- **Constraints:** unique `name`; unique `key_hash`; check `role` and `status` against their current values; the migration or seed creates the first admin (see System-wide contracts → Bootstrap).
 - **Indexes:** the unique `key_hash` serves the lookup on every call.
 - **Access policy:** see the role grants. Rows are never deleted; revocation changes `status`.
 
@@ -251,7 +246,7 @@ One row: the cap and the KiB requested from upstream so far.
 | used_kib | bigint | no | 0 | Sum of `batches.kib` for every request made, including failed ones. Never decreases (RL-4) |
 | updated_at | timestamptz | no | now() | |
 
-- **Constraints:** check `id = 1`; check `cap_kib >= 0` and `used_kib >= 0`.
+- **Constraints:** check `id = 1`; check `cap_kib >= 0` and `used_kib >= 0`; a guard rejects any update that lowers `used_kib` (RL-4). The migration inserts the one row.
 - **Indexes:** none needed.
 - **Access policy:** see the role grants. Raising `used_kib` is only done through Meter.reserve.
 
@@ -270,7 +265,7 @@ One row per request made to the entropy source, whether or not it succeeded. A b
 | settled_at | timestamptz | yes | | When the outcome was recorded |
 
 - **Constraints:** check `kib` between 1 and 512 (DE-2).
-- **Indexes:** `(requested_at)` for the sliding-window count of upstream requests (DE-1, key metric "Qrypt requests, worst 10 seconds").
+- **Indexes:** none needed. Retries after a 429 do not create a batch or reserve again, because a 429 delivers no entropy (open question 5).
 - **Access policy:** see the role grants.
 
 ### Issuance
@@ -327,7 +322,7 @@ Which batches, and which byte ranges, an issuance consumed. A call that spans tw
 | byte_offset | integer | no | | First byte taken from that batch |
 | byte_count | integer | no | | Bytes taken from that batch in this range |
 
-- **Constraints:** primary key `(issuance_id, batch_id, byte_offset)`; check `byte_count > 0`. The `byte_count` values of one issuance sum to its `bytes_consumed`.
+- **Constraints:** primary key `(issuance_id, batch_id, byte_offset)`; check `byte_count > 0`. (That the `byte_count` values of one issuance sum to its `bytes_consumed` is a Must hold on Issuance, not a database constraint.)
 - **Indexes:** `(batch_id)`, to trace a batch to the issuances that used it.
 - **Access policy:** append-only, same as `issuances`.
 
@@ -375,8 +370,8 @@ A redeemable token, stored as a hash only (VR-6).
 | is_seed | boolean | no | false | True for seed-script tokens (DP-6) |
 | created_at | timestamptz | no | now() | |
 
-- **Constraints:** unique `issuance_id` where not null; check that `issuance_id` is null exactly when `is_seed` is true; check `expires_at > created_at`; check `length(owner) <= 256`.
-- **Indexes:** `(owner, token_hash)`, which serves redemption lookups.
+- **Constraints:** unique `issuance_id` where not null; check that `issuance_id` is null exactly when `is_seed` is true; check `expires_at > created_at`; check `length(owner) <= 256` [assumed]; a guard rejects any update except setting `used_at` from null to a time, so the flag cannot be cleared or moved (VR-4).
+- **Indexes:** `(owner)`, which serves redemption lookups. Hashes are compared in the application in constant time (VR-5).
 - **Access policy:** the issuing role inserts only. The HTTP role reads and sets `used_at`. Nothing else is updated.
 
 #### `redemption_outcomes` — owned by Tokens
@@ -391,7 +386,7 @@ One row per `POST /verify` attempt. It never holds the presented value (OB-6).
 | outcome | text | no | | `redeemed`, `already_used`, `expired`, `unknown` or `rate_limited` (more may be added) |
 | attempted_at | timestamptz | no | now() | |
 
-- **Constraints:** check `length(owner) <= 256`.
+- **Constraints:** check `length(owner) <= 256` [assumed].
 - **Indexes:** `(owner, attempted_at)` for the failed-attempt count (AZ-6); `(attempted_at)` for daily counts per outcome (success metric).
 - **Access policy:** the HTTP role inserts and reads. Append-only.
 
@@ -428,7 +423,7 @@ The latest report from each running MCP server. Disposable (HLD §3). It holds n
 | reported_at | timestamptz | no | now() | Updated on every report; its age drives "not reporting" |
 
 - **Constraints:** none beyond the key.
-- **Indexes:** `(reported_at desc)`: health reads the most recent row.
+- **Indexes:** `(reported_at desc)`: health and metrics read the most recently reporting row. Old rows stay, one per server start, and are ignored [assumed].
 - **Access policy:** the MCP server role inserts and updates, the HTTP role reads.
 
 ## Shared types
@@ -521,7 +516,18 @@ Errors     401 unauthorized
            (more may be added)
 ```
 
-Connecting over stdio is not a route. A client starts the MCP server with its key in the server's environment; the server calls Access.authenticate at start and again on every tool call. A missing, unknown or revoked key makes `initialize` fail with `unauthorized` and a message naming the cause, and no tool runs (FR-3.2).
+```
+connect   stdio MCP session                          serves FR-3.1, FR-3.2, HLD I-6
+Caller     a client key, placed in the MCP server's environment by whoever launches it [assumed]
+Request    the MCP initialize request
+Response   the tool list, when the key belongs to an active client
+Errors     unauthorized — missing, unknown or revoked key
+           forbidden — an admin key (tools are for the client role)
+           the message names the cause and no tool runs
+           (more may be added)
+```
+
+The server calls Access.authenticate at start and again on every tool call.
 
 ### Jobs and messages
 None.
@@ -529,20 +535,23 @@ None.
 ### Interface for other modules
 
 ```
-authenticate(key, allowedRoles) -> Principal
+authenticate(key, allowedRoles: set of role names) -> Principal
   Checks the key against credentials by hash, reading the row every time.
   Throws Unauthorized for a missing, unknown or revoked key, and Forbidden when the role is not allowed.
   Callers rely on: a key revoked before this call returns is never accepted.
 
 hashKey(key) -> bytes
   The one function that turns a key into key_hash. Callers rely on: same input, same output.
+
+createCredential(role, name) -> { principal, key }
+  Inserts a credential and returns its key once. Used by createClient (role client) and by the seed script (the admin and two clients).
 ```
 
 ### Calls out
 None. Keys come from the operating system's random generator, not from Qrypt (the HTTP service must never hold entropy, GC-7) [assumed].
 
 ### Must hold
-- Only Access writes `credentials`.
+- Only Access writes `credentials`. The seed script writes through `createCredential`, not directly.
 - No plaintext key is stored or logged (AZ-5).
 - A call that fails authentication draws 0 bytes and uses 0 KiB of budget (AZ-2).
 - 0 calls succeed outside the role a route or tool allows (AZ-1).
@@ -560,7 +569,7 @@ None. Keys come from the operating system's random generator, not from Qrypt (th
 Counts every KiB requested from upstream against a cap, so the cap holds across restarts and across server processes, and records each request as a batch.
 
 ### Owns
-Writes `budget` and `batches`. Reads `issuances` for usage.
+Writes `budget` and `batches`. Reads `issuances` and `credentials` for usage.
 
 ### API
 
@@ -648,8 +657,12 @@ fetch(sizeKib) -> Fetched { label, bytes, receivedAt }
     Misconfigured — upstream 401 (DE-5)
     Unavailable — upstream 5xx, timeout or DNS failure (DE-4, RL-2)
     (more may be added)
-  Callers rely on: at most 30 requests in any 10 s window across all callers in the process (DE-1),
+  A retry after 429 is a new HTTP request for the same batch. It does not create a batch or reserve KiB again, because a 429 delivers no entropy.
+  Callers rely on: at most 30 requests in any 10 s window across all callers in the process, counting every HTTP request including retries (DE-1),
   backoff with jitter after 429 (DE-3), no request outside 1 to 512 KiB, and nothing logged that contains bytes.
+
+requestStats() -> { requestsLast10s }
+  HTTP requests made in the last 10 s. Read by the Status job (OB-4).
 ```
 
 ### Calls out
@@ -713,8 +726,21 @@ take(n) -> Taken
 status() -> PoolStatus
   levelBytes, marks and upstream status as of now.
 
-start() / stop()
+start() -> void
+  Runs the startup check, then begins the refill loop. Returns once the check has finished.
+stop() -> void
+  Ends the loops and discards the pool.
 ```
+
+How a failure reaches a caller:
+
+| Entropy source or Meter error | PoolStarved reason |
+|---|---|
+| BudgetExhausted from Meter, AllotmentUsed | `budget_exhausted` |
+| RateLimited, Unavailable | `temporarily_unavailable` |
+| Misconfigured | `upstream_misconfigured` |
+
+(more may be added)
 
 ### Calls out
 Meter.reserve and Meter.markBatch, and Entropy source.fetch. After the budget is spent, bytes already in the pool may still be served (Decision 2).
@@ -726,6 +752,7 @@ Meter.reserve and Meter.markBatch, and Entropy source.fetch. After the budget is
 - A refill asks for at least 64 KiB while the budget allows (PF-3).
 - When the pool first cannot cover a call, and when the resulting error is returned, an event is logged (OB-8).
 - No pooled byte is written to disk, a log or an error message (CP-2, OB-3).
+- Serving bytes already in the pool after the budget is spent follows Decision 2 (REQUIREMENTS open item 5, assumption A-13).
 
 ### Failure behaviour
 
@@ -742,7 +769,7 @@ Meter.reserve and Meter.markBatch, and Entropy source.fetch. After the budget is
 Turns pool bytes into a requested value, writes the audit record, and returns the value with its metadata. Admins use it to trace a reference.
 
 ### Owns
-Writes `issuances` and `issuance_batches`. Reads `batches`, `tokens` and `credentials` for tracing.
+Writes `issuances` and `issuance_batches`. Reads `credentials`, `batches` and `tokens` for tracing.
 
 ### API
 
@@ -753,6 +780,7 @@ Request    { length: integer 1..max per call, encoding: "hex" | "base64" }
 Response   IssuedValue with value a string of the requested encoding
 Errors     invalid_argument — length of zero or less, above the per-call maximum, unknown encoding
            unauthorized — missing, unknown or revoked key
+           forbidden — an admin key (tools are for the client role)
            budget_exhausted
            temporarily_unavailable
            upstream_misconfigured
@@ -786,13 +814,17 @@ Errors     401 unauthorized
            (more may be added)
 ```
 
-Tool results use the MCP result shape, with the `IssuedValue` as the structured content. Tool errors carry `ErrorBody`.
+Admin keys are refused on every tool with `forbidden` (AZ-1). Tool results use the MCP result shape, with the `IssuedValue` as the structured content. Tool errors carry `ErrorBody`.
 
 ### Jobs and messages
 None.
 
 ### Interface for other modules
-None — only transports call this module.
+
+```
+callStats() -> { callsByTool, errorsByCode, toolCallDurationMs }
+  Counters since process start, in the MetricsSnapshot shape. Read by the Status job (OB-4).
+```
 
 ### Calls out
 Access.authenticate, Pool.take, Tokens.storeToken, and the database transaction below. No external service.
@@ -801,7 +833,7 @@ Access.authenticate, Pool.take, Tokens.storeToken, and the database transaction 
 - Only Issuance writes `issuances` and `issuance_batches`.
 - Exactly one issuance row per successful call, and the call commits it before returning the value (VR-9, RL-6). If the write fails, the caller gets an error and no value. Bytes already drawn for that call are discarded, never given to anyone else.
 - For a redeemable token, the issuance row, its `issuance_batches` rows and the `tokens` row are written in one transaction.
-- The `byte_count` values of an issuance sum to `bytes_consumed`, which includes bytes thrown away by rejection sampling (CT-1).
+- The `byte_count` values of an issuance sum to `bytes_consumed`, which includes bytes thrown away by rejection sampling (CT-1). A test checks this on every tool, since the database does not.
 - `random_int` and `otp_6` use rejection sampling, never a modulo (VR-2).
 - The value and any pooled byte never appear in a log, an error, an audit row or a response other than the one value (CP-3, OB-3).
 - Invalid input is refused before any byte is drawn or any KiB is reserved (CT-2).
@@ -833,14 +865,16 @@ Request    { owner: string, value: string }  owner up to 256 characters
 Response   200 { outcome: "redeemed" }
 Errors     400 invalid_argument — missing or oversized fields
            401 unauthorized
-           404 { outcome: "unknown" }
-           409 { outcome: "already_used" }
-           410 { outcome: "expired" }
-           429 { outcome: "rate_limited" }
+           403 forbidden — no role is excluded today, reserved
+           404 unknown
+           409 already_used
+           410 expired
+           429 rate_limited
+           each refusal is an ErrorBody whose error code is the outcome name, plus an outcome field with the same name
            (more may be added)
 ```
 
-Every attempt that reaches the redemption logic records exactly one outcome (OB-6). Authentication failures and malformed requests do not reach it.
+Every authenticated, well-formed attempt records exactly one outcome (OB-6). Authentication failures and malformed requests do not reach the redemption logic and record none (see Upstream fixes).
 
 ### Jobs and messages
 None.
@@ -849,8 +883,11 @@ None.
 
 ```
 storeToken(tx, issuanceId, owner, kind, value, expirySeconds) -> void
-  Computes the hash and inserts the token inside the caller's transaction.
-  Does not read anything back. Callers rely on: the plain value is not kept.
+  tx is a database transaction the caller opened: this module's insert commits or rolls back with it.
+  Computes the hash and inserts the token. Does not read anything back. Callers rely on: the plain value is not kept.
+
+storeSeedToken(owner, kind, value, expirySeconds) -> void
+  Used only by the seed script. Inserts a token flagged is_seed with no issuance_id.
 
 redeem(owner, value) -> Outcome
   Counts failed attempts, finds the owner's matching token, flips the used flag, records the outcome.
@@ -863,11 +900,12 @@ hashToken(owner, value) -> bytes
 None. The pepper comes from environment configuration (CP-1).
 
 ### Must hold
-- Only Tokens writes `tokens` and `redemption_outcomes`.
+- Only Tokens writes `tokens` and `redemption_outcomes`. The seed script writes through `storeSeedToken`.
 - A token redeems exactly once. Two simultaneous redemptions of one token produce exactly one `redeemed` (VR-4), by one conditional update on `used_at` that also requires the token to be unexpired.
 - A redemption at or after expiry fails (FR-2.6). Expiry is set and checked on the database clock, so the issuing machine and the hosted service cannot disagree [assumed].
 - After 5 failed attempts (`already_used`, `expired`, `unknown`) for one owner within 10 minutes, further attempts for that owner get `rate_limited` until the window ends, even with the right value (AZ-6).
 - Hashes are compared in one place, in constant time (VR-5).
+- Under concurrent attempts for one owner, no more than 5 failed attempts are ever allowed through in a 10-minute window (AZ-6). The story decides how to serialise per owner.
 - The pepper and every plain value are absent from the database, logs and outcomes (VR-6, CP-3, OB-6).
 - The row for a seed token has `is_seed` true and no `issuance_id` (DP-6).
 - Two live tokens for the same owner with the same value are possible with probability about 1 in 10^6 per pair for `otp_6`. Redemption then consumes one of them, and a second attempt consumes the other. This is accepted [assumed].
@@ -885,7 +923,7 @@ None. The pepper comes from environment configuration (CP-1).
 Lets the MCP server report its state to the database, and lets the hosted service turn the latest report into health and metrics.
 
 ### Owns
-Writes `server_status`. Reads `budget` for the budget series.
+Writes `server_status`. Reads `budget` for the budget series, and Pool, Issuance and Entropy source for the report.
 
 ### API
 
@@ -918,19 +956,15 @@ Errors     401 unauthorized
 ```
 statusReport   every 5 s inside the MCP server process       serves OB-9, HLD I-15
 Trigger proof  none — runs inside the process
-Payload        PoolStatus and MetricsSnapshot
-Reads          Pool.status
+Payload        PoolStatus and MetricsSnapshot, which the job assembles
+Reads          Pool.status, Issuance.callStats, Entropy source.requestStats
 Writes         server_status (upsert by instance_id)
 Twice-safe     yes
 On failure     the report is skipped and retried at the next tick, a log event is raised, tool calls are not affected
 ```
 
 ### Interface for other modules
-
-```
-report(poolStatus, snapshot)
-  Writes the latest report for this server instance.
-```
+None — the transports call it, and its job pulls from Pool, Issuance and Entropy source rather than being called by them.
 
 ### Calls out
 None.
@@ -939,6 +973,8 @@ None.
 - Only Status writes `server_status`, and a report holds no entropy and no value (OB-9).
 - `/health` answers in 200 ms or less once the service is awake [prop] (OB-1).
 - A report older than 15 s reads as "not reporting" (OB-1).
+- Counters in `snapshot` are cumulative since process start. A window such as "errors in 30 s" is the difference of two reports.
+- With more than one row, health and metrics use the most recently reporting one.
 - With no report row, `/health` shows an empty state, not an error (FR-5.6).
 
 ### Failure behaviour
@@ -974,13 +1010,15 @@ None.
 None.
 
 ### Calls out
-- The MCP server over stdio, through the MCP client. The agent starts the server with the client key and the server's own configuration in the server's environment. It lists the server's tools and offers all of them to the model, which are the three issuing tools and nothing else.
+- The MCP server over stdio, through the MCP client. The agent starts the server and passes only the client key. The server reads its own database connection, pepper, key-hashing secret and Qrypt token from its own configuration, never from the agent [assumed]. The agent lists the server's tools and offers all of them to the model: the issuing tools, and no tool that returns stored data.
 - OpenRouter chat completions: the conversation, the tool list, and the chosen free model. The request never contains an issued value: the tool result the model sees holds a placeholder such as `{{v1}}` and the metadata, and the agent keeps the real value in memory for the conversation (CP-5).
 - Test doubles: a scripted model for unit tests (EV-4) and the mock Qrypt service behind a real MCP server.
 
 ### Must hold
 - No issued value is sent to the model provider (CP-5).
-- Every value shown to the user was returned by a tool in the same conversation. The agent replaces a placeholder only with a value it holds, and any reply text that looks like a code, key or number the tools did not return is logged as unbacked (OB-7, EV-2).
+- The agent never holds or forwards a database credential, the pepper, the key-hashing secret or the Qrypt token (AZ-3).
+- Every model request is counted, and the total for a run is written to the results file (GC-3).
+- Every value shown to the user was returned by a tool in the same conversation. The agent replaces a placeholder only with a value it holds. Reply text that looks like a code, key, UUID or number that no tool returned is removed from the reply, the user is told, and an unbacked event is logged (OB-7, EV-2). The scan is a check on the model's text, not a proof; the redemption outcome `unknown` is the second line (success metric).
 - Each reply records one event with the count of values found and the count backed (OB-7). Values are never in the event.
 - When no value can be issued, the agent says so and produces none itself (FR-2.8).
 - A request to make up a code, to show other users' tokens, or to bypass the budget, role or secrets, is refused without a tool call that returns a stored token (FR-2.3, FR-2.7, EV-3).
@@ -992,17 +1030,20 @@ None.
 |---|---|---|
 | Tool error | the error in plain words, no value | log event |
 | Model unavailable, over its limit or slow | plain message | log event |
-| Model reply with an unbacked value | the reply is shown and the event is logged | OB-7 event |
+| Model reply with an unbacked value | the value is removed and the user is told | OB-7 event |
 
 ## System-wide contracts
 
 | Contract | Rule |
 |---|---|
-| Error format | HTTP errors are `{ error: code, message }` with a snake_case code. Tool errors carry the same two fields. Codes include at least `invalid_argument`, `unauthorized`, `forbidden`, `not_found`, `budget_exhausted`, `temporarily_unavailable`, `upstream_misconfigured`, `database_unavailable` (CT-4, more may be added). A refusal never contains a value |
+| Error format | HTTP errors are `{ error: code, message }` with a snake_case code. Tool errors carry the same two fields. Codes include at least `invalid_argument`, `unauthorized`, `forbidden`, `not_found`, `budget_exhausted`, `temporarily_unavailable`, `upstream_misconfigured`, `database_unavailable` (CT-4, more may be added). The `/verify` refusals use the outcome name as the code and add an `outcome` field. A refusal never contains a value |
 | Authentication | HTTP routes take `Authorization: Bearer <key>`. The MCP server takes the client key from its environment. `POST /verify` accepts a client or admin key, `/admin/*` and `/metrics` an admin key, `/health` no key [assumed] (AZ-1) |
-| Database roles | Four roles, set up by migrations. `migrator` owns every table and runs migrations and the seed script. `mcp_server`, `http_service` and `backup` are the roles the application and the backup job run as. The grants below are the access policy of every table (AZ-3, VR-10) |
+| Database roles | Roles set up by migrations, including `migrator`, `mcp_server`, `http_service` and `backup` (more may be added). `migrator` owns every table and runs migrations and the seed script. The others are the roles the application and the backup job run as. Role passwords come from the environment, never from migration files (CP-1). The grants below are the access policy of every table (AZ-3, VR-10) |
+| Trust boundary | The `mcp_server` role runs on the caller's machine, so whoever controls that process can insert audit rows for any client, raise `used_kib`, write token hashes, and read credential hashes. The database stops it reading or changing tokens and audit rows already written. This is accepted for the assessment [assumed] |
+| Database connections | Every process recovers from a database restart without a process restart. A call made while the database is down fails with `temporarily_unavailable` (RL-7) |
+| Bootstrap | A migration creates the one `budget` row. The seed script, run as `migrator`, creates 1 admin and 2 clients through Access.createCredential and prints each key once, and creates the seed tokens through Tokens.storeSeedToken (DP-6) |
 | Logging | One JSON object per line with timestamp, level, event and client id when known. The MCP server writes logs to its error stream, never its standard output, which carries the protocol. Values, bytes, keys, the pepper and database credentials never appear (OB-2, OB-3, CP-1) |
-| Configuration | Qrypt token, database connection strings per role, pepper, key-hashing secret, client key, OpenRouter token and model name come from the environment. Marks, per-call maximum, refill size, expiry default and maximum, and the wait for a refill are configurable with the defaults the requirements set (SC-1, PF-3, CT-3, RL-3). `.env.example` lists names with placeholders (CP-1) |
+| Configuration | Each process reads its own secrets from the environment or its own configuration file. MCP server: Qrypt token, the `mcp_server` connection string, pepper, key-hashing secret. The client key is placed in the server's environment by its launcher. HTTP service: the `http_service` connection string, pepper, key-hashing secret. Agent: OpenRouter token, model name and the client key it passes on. The backup job: the `backup` connection string and the public key. Marks, per-call maximum, refill size, expiry default and maximum, and the wait for a refill are configurable with the defaults the requirements set (SC-1, PF-3, CT-3, RL-3). `.env.example` lists names with placeholders (CP-1) |
 | Time | All stored times are UTC. Token expiry is set and checked on the database clock |
 | Test doubles | A committed mock Qrypt service, a scripted model, and a stub second source. The suite runs offline against Docker Compose Postgres 18 (EV-4) |
 | Migrations and seed | The schema comes only from migrations; running them twice is safe (DP-3). The seed script creates 1 admin, 2 clients and at least 3 flagged seed tokens, uses 0 KiB of live entropy, and can run twice (DP-6) |
@@ -1029,11 +1070,11 @@ No role the application or backup job runs as has delete, truncate, or any updat
 | Metric | Data source | Added by this document? |
 |---|---|---|
 | Success: codes shown to users that the product never issued, per day | `redemption_outcomes.outcome` and `attempted_at` | yes — the table and its time index |
-| Replies with an unbacked value, per day | The agent's reply-check log event | yes — the event |
-| Issued tokens redeemed before expiry, per day | `tokens.created_at`, `expires_at`, `used_at` | yes — `tokens` |
+| Replies with an unbacked value, per day | The agent's reply-check log events, aggregated by the results script from the agent's log | yes — the event |
+| Issued tokens redeemed before expiry, per day | `tokens.created_at`, `expires_at`, `used_at`, excluding `is_seed` | yes — `tokens` |
 | Tool-call time, p95 (PF-1) | The duration on each tool-call log line, and `MetricsSnapshot.toolCallDurationMs` | yes — the log field |
-| Server-caused errors under load (PF-2) | `MetricsSnapshot.errorsByCode`, and the load harness | yes — the snapshot field |
-| Qrypt requests, worst 10 seconds (DE-1) | `batches.requested_at`; the mock's request log in tests | yes — the column |
+| Server-caused errors under load (PF-2) | the difference of two reports of `MetricsSnapshot.errorsByCode`, and the load harness | yes — the snapshot field |
+| Qrypt requests, worst 10 seconds (DE-1) | `MetricsSnapshot.upstreamRequestsLast10s` sampled each report, and the mock's request log in tests | yes — the field |
 | Entropy served per Qrypt request (PF-3) | `issuances.bytes_consumed` against count of `batches` excluding purpose `startup_check` | yes — `purpose` |
 | Qrypt use against the cap (VR-7, GC-4) | `budget.used_kib` | no |
 | Time to "unavailable" when Qrypt is down (RL-1) | The two OB-8 log events | yes — the events |
@@ -1055,6 +1096,8 @@ The regression gate is GitHub Actions on every push: lint, tests with coverage, 
 | 2 | VR-8 says a call the pool cannot cover removes 0 bytes. A multi-draw call (`random_int`, `otp_6`) may have drawn bytes before a later draw fails | A: reword VR-8 to apply to a call's first draw and say bytes already drawn are discarded. B: reserve a worst-case block up front, which wastes entropy | Pool and Issuance Must holds | Owner |
 | 3 | Where the language model sits in the golden-set run: the placeholder scheme changes how the agent builds tool results. Does a free model reliably copy a placeholder into its reply? | A: placeholder scheme as designed. B: if the chosen model drops placeholders, the agent appends the value itself | Agent | Model trial |
 | 4 | The hosted service cannot read the MCP server's memory, so metrics travel through `server_status.snapshot` [assumed] | A: as designed. B: the six series are served only by the local server process | Status | Owner |
+| 5 | VR-7 says the meter equals the KiB "requested upstream". A retry after a 429 delivers nothing, so it is not counted again | A: as designed, and the test compares the meter with non-429 requests in the mock's log. B: count every attempt, which could burn up to 512 KiB (5% of the budget) in a 60 s 429 storm (DE-3) | Meter, Entropy source | Owner |
+| 6 | The agent's scan for invented values is a pattern check on text, so a determined model could slip a value past it | A: as designed, with the redemption outcome `unknown` as the second line. B: remove all model-written text from replies that is not on an allow-list, which hurts conversation | Agent | Owner |
 
 **Assumptions**
 
@@ -1070,6 +1113,11 @@ The regression gate is GitHub Actions on every push: lint, tests with coverage, 
 | A-8 | The tool metadata adds `batch_ids` and `reference` to the three fields the brief names | Shared types | Owner |
 | A-9 | `/verify` returns 404, 409, 410 and 429 for the refusal outcomes, with the outcome in the body | Tokens | Owner |
 | A-10 | Metrics reach the hosted service through `server_status.snapshot` (open question 4) | Status | Owner |
+| A-11 | An owner is at most 256 characters | tokens, redemption_outcomes, verify | Owner |
+| A-12 | A redemption request carries the owner and the value presented (REQUIREMENTS Assumption 3, open item 10) | Tokens | Owner |
+| A-13 | Bytes already in the pool may still be served after the budget is spent (Decision 2, open item 5) | Pool | Owner |
+| A-14 | The MCP server reads its own secrets from its own configuration, and the launcher supplies only the client key | Agent, System-wide contracts | Owner |
+| A-15 | Old `server_status` rows are left in place and ignored | Status | Owner |
 
 **Requirement rows.** The traces needed no new capability.
 
@@ -1080,5 +1128,6 @@ The regression gate is GitHub Actions on every push: lint, tests with coverage, 
 **Upstream fixes**
 
 - `REQUIREMENTS.md`: AZ-3 was reworded to name the issuing role, CP-5 was settled (values stay out of the model's context), DP-6 and open items 3, 6 and 11 were marked resolved, all on the owner's approval of 2026-10-17. VR-8's scope for multi-draw calls is open question 2.
+- `REQUIREMENTS.md` proposals, not yet applied: OB-6 reads "every `POST /verify` records exactly 1 outcome", and this design records one for every authenticated, well-formed attempt, so reword it that way. VR-8 for multi-draw calls is open question 2. VR-7's meaning of "requested" is open question 5.
 - `HIGH_LEVEL_DESIGN.md` §4: `getIssuance` returns the batch ranges and the token summary, and the tool metadata gains `reference` (A-8). §4.2 gains `PUT /admin/budget` and `POST /admin/clients/{id}/revoke` as the routes behind `setBudget` and `revokeClient`.
-- `STACK.md`: the OB-4 series cross the process boundary through the status report (open question 4), so `prometheus_client` is needed only to write the text format in the HTTP service. Its open question 1 is answered here.
+- `STACK.md`: the OB-4 series cross the process boundary through the status report (open question 4), so `prometheus_client` is needed only to write the text format in the HTTP service. Its open questions 1, 2, 3 and 4 are answered here or by the owner (OB-4 transport, CP-5, the backup job as a system-wide contract, AZ-3).
