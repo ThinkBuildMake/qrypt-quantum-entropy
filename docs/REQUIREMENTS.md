@@ -83,7 +83,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | 4 | The upstream ceiling is the brief's 30 requests per 10 s (3 per second). | The SLA's "20 per second", which is looser (200 per 10 s). Working to the stricter limit satisfies both readings. | DE-1 |
 | 5 | The agent has no way to read stored tokens. | A "look up my tokens" tool: a prompt could abuse it (`U§7`). | AZ-3, AZ-4, FR-2.7 |
 | 6 | The audit record holds no value, so fabrication is checked by comparing agent replies with the values the tools returned in the same test run. | Keeping a value or hash of every random output in the audit log. | EV-2, CP-3 |
-| 7 | Whether issued values enter the model provider's context is not yet decided; interim: they do, and the model's data policy is recorded. | Deciding now. | CP-5 |
+| 7 | Issued values stay out of the model provider's context; the agent swaps a placeholder for the real value in its reply, and the model's data policy is recorded. | Letting values pass through the model: free providers could log or train on them. | CP-5 |
 | 8 | Repeated failed redemptions for one owner are limited (an addition beyond the brief). | Unlimited attempts against a 6-digit space. The cost is that an attacker can lock an owner out for a window. | AZ-6 |
 
 ---
@@ -196,7 +196,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 |---|---|---|---|---|
 | AZ-1 | Two roles, admin and client, are enforced on the server. Across every tool and HTTP route, with {no key, client key, admin key}, 0 calls succeed outside the role that route allows. | Committed matrix test over every route and tool × 3 credentials | B-SEC, FR-5, FR-3.2 | Gate |
 | AZ-2 | 0 tool calls run with a missing, unknown or revoked client key. A rejected call draws 0 bytes and uses 0 KiB of budget. A revocation takes effect for the very next call. | Test: call with each bad credential, assert pool level and meter unchanged; revoke, then call | B-C4, FR-3.2, FR-5.3 | Gate |
-| AZ-3 | The agent process cannot read the token table: a read attempted with the agent's own credentials is denied, while inserting a token hash and an audit row succeeds. | Test running both operations with the agent's credentials against the real storage | B-SEC, B-EC | Gate |
+| AZ-3 | The database role used to issue tokens (the one the MCP server runs with, which the agent launches it with) can insert token hashes and audit rows, but a read of the token table with that role is denied [src user, 2026-10-17: reworded at architecture]. | Test running both operations with that role against the real storage | B-SEC, B-EC | Gate |
 | AZ-4 | The agent has 0 tools that return stored tokens or audit contents. | Test lists the agent's tool set and asserts the exfiltration prompt (EV-3) produces 0 tokens | B-EC, FR-2.7 | Gate |
 | AZ-5 | Client keys are stored only as a hash; the plain key is shown once at creation. 0 plaintext client keys appear in storage or logs. | Dump storage after seeding and grep for the issued keys; 0 matches | B-SEC | Should |
 | AZ-6 | After 5 failed redemptions for one owner within 10 minutes, further redemptions for that owner are refused until the window ends [prop]. Against a six-digit code (10^6 possibilities) this holds an attacker to 5 / 10^6 = 0.0005% per window. The cost is that an attacker can lock an owner out for the window; that is accepted. | Test: 6th attempt inside the window is refused even with the correct value; allowed after the window | B-EC (own addition; the brief does not ask for it) | Should |
@@ -268,7 +268,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | CP-2 | Pooled entropy is held in memory only. After a run with a non-empty pool, 0 pooled bytes are found in any file the application wrote. A restart discards the pool. | Mock returns a known marker sequence; scan data directory and logs for it after a run and a restart | B-EC, P Off-Limits | Gate |
 | CP-3 | The audit log contains 0 values, tokens or seeds. | Scan the audit table for every value issued in the suite, in raw, hex and base64 forms | B-C5, FR-4 | Gate |
 | CP-4 | Every deployed endpoint is served over TLS (1.2 or higher [prop]); plain HTTP is refused or redirected. | Scripted check against the deployed URL | B-SEC, P | Must |
-| CP-5 | The data policy (retention and training) of the model provider used for the agent is recorded in the deliverable docs. Whether issued values pass through the model's context at all is [tbd: decided at design, because the brief's fabrication scan assumes replies contain values; interim: they do]. Values used in demos and tests are short-lived (≤ 10 minutes [prop]) and fictional. | Docs review; if the decision is to withhold values from the model, an outbound-request capture shows 0 values sent | U§9, `USERS_handoff.md` | Must |
+| CP-5 | The data policy (retention and training) of the model provider used for the agent is recorded in the deliverable docs. No issued value is sent to the model provider: the agent gives the model a placeholder and puts the real value into the reply itself [src user, 2026-10-17]. Values used in demos and tests are short-lived (≤ 10 minutes [prop]) and fictional. | Docs review; an outbound-request capture over the golden-set run shows 0 issued values sent to the model | U§9, `USERS_handoff.md` | Must |
 
 ### 3.8 Contracts and interfaces (CT-)
 
@@ -305,7 +305,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | DP-3 | The schema is created only by migrations. A clean database plus migrate yields a working app, and running migrate twice causes no error. | Migration test on an empty database | B-CQ, P | Must |
 | DP-4 | Dev, staging and prod differ only in environment configuration: switching profile needs 0 code changes. | Run the suite under two environment sets | B-CQ, P | Must |
 | DP-5 | CI runs the tests and a linter on every push; a failure of either marks the push failed. | CI history: runs on 100% of pushes to the working branch; green at submission | B-CQ, P | Must |
-| DP-6 | A seed script creates exactly 1 admin, 2 clients and at least 3 sample issued tokens, uses 0 KiB of live Qrypt entropy, and can be run twice without error. Sample tokens are labelled as seed data and are not presented as Qrypt-sourced (open item 6). | Run the script twice on an empty database and count rows; check the meter is 0 | B-SUB | Must |
+| DP-6 | A seed script creates exactly 1 admin, 2 clients and at least 3 sample issued tokens, uses 0 KiB of live Qrypt entropy, and can be run twice without error. Sample tokens are labelled as seed data and have no audit record, so no audit row claims a Qrypt source [src user, 2026-10-17]. | Run the script twice on an empty database and count rows; check the meter is 0 | B-SUB | Must |
 | DP-7 | The submission contains: source code, README with grader quick-start, `.env.example`, committed mock upstream, MCP connection snippet, technical documentation, a deployment guide, test results (EV-6), `AI_USAGE.md` (tools used, for what, and prompts or configuration that shaped the work), and a one-line description ≤ 120 characters. | Checklist at submission; character count of the one-liner | P, B-SUB | Must |
 | DP-8 | A demo video ≤ 5 minutes (300 s) shows: tools in MCP Inspector, the agent issuing and verifying a token, a budget-exhausted rejection, and fail-closed behaviour on a simulated 503. | Video length and a scene checklist | B-SUB | Must |
 
@@ -374,7 +374,7 @@ Every **[prop]** and **[tbd]** number. Status is *accepted*, *revised*, or *pend
 | OB-5 | Alert at 80% of budget | Leaves 2,048 KiB to act on, from 10,240 × 20% | pending review |
 | CP-4 | TLS 1.2 or higher | Widely supported minimum | pending review |
 | CP-5 | Demo values ≤ 10 minutes | Limits exposure through the model provider | pending review |
-| CP-5 | **[tbd]** Whether values enter the model's context | Decided at design; pending | pending |
+| CP-5 | Values stay out of the model's context | Owner decision at architecture | accepted (user, 2026-10-17) |
 | CT-3 | 1,024-byte per-call max; 32-byte API key; hex and base64 | 1,024 bytes is one upstream block and 1/128 of the high mark; 32 bytes = 256 bits | pending review |
 | EV-3 | 2 extra adversarial prompts | Brief names three; two more chosen to reach 5 | pending review |
 | CO-1 | Dev ≤ 1,024 KiB, demo ≤ 512 KiB | 10% and 5% of the 10,240 KiB cap; rest is reserve | pending review |
@@ -384,12 +384,12 @@ Every **[prop]** and **[tbd]** number. Status is *accepted*, *revised*, or *pend
 **Open items that only a running system, an upstream fix or the owner can answer:**
 1. **Time zone.** Confirm CDT or CST for the deadline (GC-1).
 2. **Database roles (resolved).** AZ-3 and VR-10 need credentials the application cannot widen. SQLite has no roles, so the owner chose a role-capable SQL database (GC-5). The stack doc picks the engine and a free-tier host; it must offer separate roles and a local copy for offline tests.
-3. **Values in the model's context** (CP-5). The brief's fabrication scan assumes the reply shows the value; keeping values from the provider means the scan reads tool returns instead. Free OpenRouter models may log or train on prompts; check the chosen model.
+3. **Values in the model's context (resolved).** Issued values stay out of the model's context (CP-5, owner, 2026-10-17). Still record the chosen model's data policy.
 4. **Fabrication scan.** EV-2 compares replies with tool returns, not the audit log, because the audit holds no value (Decision 6). Confirm this reading is acceptable.
 5. **Pool bytes after the budget is spent** (Decision 2). Confirm serving already-fetched bytes after the meter reaches zero is acceptable, or the opposite.
-6. **Seed tokens.** The brief's "sample issued tokens" would carry source `qrypt` if made with the mock, which would misstate provenance. DP-6 labels them as seed data; confirm.
+6. **Seed tokens (resolved).** Seed tokens are flagged as seed data and have no audit record (DP-6, owner, 2026-10-17).
 7. **Free-model request limits (resolved).** The owner has bought $10 of OpenRouter credit, which lifts the free-model limit to 1,000 requests a day (GC-3, GC-2).
 8. **Confirm with Qrypt** (from `USERS_handoff.md`): whether the random bytes are "Qrypt Properties", whether pooling is allowed, the true rate ceiling, whether the portal shows per-token usage, and SP 800-90B status. Trial terms may be withdrawn (Terms 3.3) or changed (10.4).
 9. **Schedule.** The brief timeboxes 2 days and the PRD 2–3 days; the owner's deadline is Tue 2026-10-20 with one builder and nothing cut. About 100 rows is a large surface for one person. If the story estimate does not fit, flag the tradeoff to the owner rather than dropping a core item.
 10. **Redemption request shape** (Assumption 3): owner plus value presented, to be confirmed in architecture.
-11. **Who writes the token hash.** AZ-3 reads as if the agent holds an insert-only database credential; `HIGH_LEVEL_DESIGN.md` assumes the server writes the hash inside `generate_token` (with owner and expiry as arguments). Confirm in architecture, then reword AZ-3 if needed.
+11. **Who writes the token hash (resolved).** The MCP server writes the hash inside `generate_token`, with an insert-only role; AZ-3 is reworded to match (owner, 2026-10-17).
