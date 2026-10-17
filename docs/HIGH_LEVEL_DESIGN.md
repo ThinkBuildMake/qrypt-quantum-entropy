@@ -231,7 +231,7 @@ Final at this scale: total volume is capped at 163,840 issuances by the budget (
 | HTTP service host | $0 free tier (GC-9) | $0 |
 | Relational database | $0 free tier with roles (GC-5) | $0 |
 | Entropy service | $0, trial, ≤ 10,240 KiB (GC-4) | $0 |
-| Language model | $0, free-tier or local (GC-3) | $0 |
+| Language model | $0 per call, `:free` model; a one-time $10 credit is already bought by the owner (GC-2, GC-3) | $0 |
 | **Total** | **$0** | **$0 — within the $0 budget (GC-2), if free tiers exist** |
 
 Exact prices and free-tier terms are in `STACK.md`. Two things could break $0: a free database that offers no separate roles (spike S-1 in `STACK.md`), and an expired free database that would need a paid upgrade. A free host that sleeps is accepted for the demo (owner, 2026-10-17).

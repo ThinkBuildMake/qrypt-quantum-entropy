@@ -21,8 +21,8 @@
 | 7 | Backups | Scheduled `pg_dump`, encrypted, via GitHub Actions | Render Free has none (RL-7) |
 | 8 | Upstream client | httpx | Timeouts, swappable transport (DE-4, CH-1) |
 | 9 | Hashing | Python standard library | HMAC-SHA-256 and constant-time compare (VR-5, VR-6) |
-| 10 | Agent | `openai` SDK to OpenRouter, hand-written tool loop | Few hidden calls against a 50-a-day cap (GC-3) |
-| 11 | Agent model | A `:free` tool-calling model; local Ollama fallback | $0 (GC-2, GC-3) |
+| 10 | Agent | `openai` SDK to OpenRouter, hand-written tool loop | Every model request visible and counted (GC-3) |
+| 11 | Agent model | A `:free` tool-calling model; local Ollama fallback | No per-call cost; fits GC-3 |
 | 12 | Logs and metrics | structlog; prometheus_client | JSON logs, six series (OB-2, OB-4) |
 | 13 | Tests | pytest, pytest-cov, hypothesis, scipy | Statistical and property tests (VR-2, VR-3, EV-5) |
 | 14 | Load test | Scripted asyncio client using the MCP client | PF-2 is over stdio; k6 and Locust speak HTTP |
@@ -37,10 +37,11 @@
 |---|---|
 | Render free web service and free Postgres | $0 [verify] |
 | GitHub Actions on a public repository | $0 [verify] |
-| OpenRouter `:free` model | $0 |
+| OpenRouter `:free` model calls | $0 |
+| OpenRouter credit, one time | $10, already bought by the owner [src user, 2026-10-17]; it raises the free-model limit to 1,000 requests a day [verify] |
 | Qrypt, within the trial allowance | $0 |
-| **Typical** | **$0** |
-| **Worst case** | **$0 while no payment method is added.** Render suspends free services when limits run out; it doesn't bill. Upgrading an expired database, or buying OpenRouter credit, would be paid spend and breaks GC-2. |
+| **Typical** | **$0 recurring; the $10 credit is already spent** |
+| **Worst case** | **$0 while no payment method is added.** Render suspends free services when limits run out; it doesn't bill. Upgrading an expired database would be paid spend and breaks GC-2. |
 
 ---
 
@@ -61,7 +62,7 @@ Terms used in this document that someone new to the project wouldn't know yet. `
 
 | Term | Meaning |
 |---|---|
-| `:free` model | A model on OpenRouter that costs nothing to call but is limited to a few requests a minute and a few dozen a day. |
+| `:free` model | A model on OpenRouter that costs nothing to call but is limited to 20 requests a minute and 50 a day, or 1,000 a day once the account has bought $10 of credit. |
 | Tool calling | A language model's ability to answer with "call this function with these arguments" instead of text. |
 | Lockfile | A file recording the exact version of every library, so every machine installs the same ones. |
 | Docker Compose | A tool that starts programs, here a database, from a short text description on any machine with Docker installed. |
@@ -184,7 +185,7 @@ Terms used in this document that someone new to the project wouldn't know yet. `
 
 | Option | Pros | Cons |
 |---|---|---|
-| **`openai` SDK pointed at OpenRouter, hand-written tool loop, the MCP `Client` for tools** ✅ | OpenRouter speaks the same protocol; no hidden retries or stored conversation state against a 50-requests-a-day cap (GC-3); the reply check (OB-7) sits in plain code | We write the translation between MCP tool descriptions and the model's tool format |
+| **`openai` SDK pointed at OpenRouter, hand-written tool loop, the MCP `Client` for tools** ✅ | OpenRouter speaks the same protocol; no hidden retries or stored conversation state, so every request can be counted (GC-3); the reply check (OB-7) sits in plain code | We write the translation between MCP tool descriptions and the model's tool format |
 | PydanticAI, LangChain | Less glue | Hidden extra model calls and retries; state kept between turns; harder to count requests (GC-3) |
 
 **Choice: the `openai` SDK with a hand-written loop.** Every model request is visible and counted (GC-3, OB-7).
@@ -195,13 +196,13 @@ Terms used in this document that someone new to the project wouldn't know yet. `
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A `:free` tool-calling model**, candidates `google/gemma-4-31b-it`, `poolside/laguna-s-2.1`, `nvidia/nemotron-3-super-120b-a12b` ✅ | $0; listed with tool support on 2026-10-17 [verify] | 20 requests a minute and 50 a day until $10 of credit is bought; each runs on a single provider; some free providers may use prompts for training [verify] |
+| **A `:free` tool-calling model**, candidates `google/gemma-4-31b-it`, `poolside/laguna-s-2.1`, `nvidia/nemotron-3-super-120b-a12b` ✅ | $0; listed with tool support on 2026-10-17 [verify] | 20 requests a minute, and 1,000 a day because the owner has bought $10 of credit [verify]; each runs on a single provider; some free providers may use prompts for training [verify] |
 | Local model through Ollama | No daily cap; no data leaves the machine | Needs a capable computer; slower; accuracy unknown |
 | Paid model | Reliable | Paid (GC-2) |
 
 **Choice: a `:free` model, picked by a trial run against the golden set (EV-1), with Ollama as the fallback.** The model name goes in the results file (GC-3).
 
-**Needs from the design.** The 15-prompt golden set, 5 adversarial prompts and the PF-4 timing run together take roughly 60 to 150 requests, more than one day's cap (open item 7), so runs are spread over days and requests counted. Whether issued values pass through the model is open question 2.
+**Needs from the design.** The 15-prompt golden set, 5 adversarial prompts and the PF-4 timing run together take roughly 60 to 150 requests, well inside 1,000 a day, so they can run in one day; requests are counted and recorded (GC-3). Whether issued values pass through the model is open question 2.
 
 ## 12. Logs and metrics
 
@@ -263,7 +264,7 @@ Terms used in this document that someone new to the project wouldn't know yet. `
 | Create the production database no earlier than 2026-10-20 (expires 30 days after creation, one free database per workspace). Delete the spike database first | Same day | DP-2 |
 | `uv lock` and `uv sync` on Python 3.14 in a blank project | Minutes | Whole stack |
 | Backup encryption key pair made; private key kept offline | Minutes | RL-7 |
-| Spread golden-set, adversarial and PF-4 runs over 2–3 days starting now | 2–3 days | EV-1, EV-3, PF-4 (deadline 2026-10-20) |
+| Confirm the credit shows on the OpenRouter account (`GET /api/v1/key` reports the daily limit) | Minutes | EV-1, EV-3, PF-4 |
 | Account-level opt-out of training on prompts for free models set in OpenRouter | Minutes | CP-5 |
 
 ## 20. Open choices
@@ -283,7 +284,6 @@ Things no technology choice can settle. Each goes to the owner of the named docu
 | 2 | Requirements | **CP-5 and free-model privacy.** Issued values entering the model's context send OTPs and keys to free providers | Decide now to keep values out of the model's context (the agent code inserts them into the reply); OB-7 then reads tool returns |
 | 3 | Design | **HLD omissions.** It says "Scheduler: none" and backups are "provided by platform" | Add to §5 and §6: a daily encrypted backup job and its key; no platform backups on the free database |
 | 4 | Requirements | **AZ-3 wording** assumes the agent holds an insert-only credential; the design has the server write the hash | Already open item 11; reword AZ-3 at architecture |
-| 5 | Requirements | **EV-1, EV-3, PF-4 against a 50-a-day cap** and a 2026-10-20 deadline | Open item 7; plan eval runs now, counting requests |
 
 ---
 
