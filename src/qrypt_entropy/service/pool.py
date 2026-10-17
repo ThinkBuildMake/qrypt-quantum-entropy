@@ -2,13 +2,14 @@
 
 `Pool` (S10) is the real pool: it hands each byte out once and refills itself in the background. The module-level
 `take`/`status` below stay S01 stubs (fixed pattern, not entropy, so a stub value is recognisable) until S20 wires a
-running `Pool` into the flows. S11 adds the wait for a refill and the failure paths; S12 adds start.
+running `Pool` into the flows. S11 adds the wait for a refill and the failure paths; S12 adds start + status.
 Pooled bytes live in this process's memory only (CP-2): never written to a file, a log or an error message (OB-3).
 """
 
 import asyncio
 import random
 from collections import deque
+from datetime import UTC, datetime
 
 from qrypt_entropy.config import get_settings
 from qrypt_entropy.errors import BudgetExhausted, Misconfigured, PoolStarved, TemporarilyUnavailable, Unavailable
@@ -47,6 +48,7 @@ class Pool:
         self._stopped = False
         self._waiting: list[int] = []  # sizes of the takes now waiting for a refill
         self._error: Exception | None = None  # why the latest refill failed; cleared by the next success
+        self._last_success_at: str | None = None
         self._changed = asyncio.Event()  # set (and replaced) whenever bytes arrive, a refill fails or the pool stops
 
     @property
@@ -112,7 +114,45 @@ class Pool:
         changed.set()
 
     def status(self) -> PoolStatus:
-        return PoolStatus(self._level, self.low, self.high, "ok", None)
+        """ok, or after a failed fetch: misconfigured (401), failing (a call cannot be covered) or degraded."""
+        if self._error is None:
+            state = "ok"
+        elif isinstance(self._error, Misconfigured):
+            state = "misconfigured"
+        elif self._level == 0 or self._waiting:
+            state = "failing"
+        else:
+            state = "degraded"
+        return PoolStatus(self._level, self.low, self.high, state, self._last_success_at)
+
+    async def start(self) -> None:
+        """Run the 1 KiB startup check (DE-5), then begin the refill loop. A failed check is logged, never raised."""
+        self._stopped, self._error, self._last_success_at = False, None, None
+        batch = None
+        try:
+            batch = meter.reserve(1, "startup_check", "qrypt")
+            fetched = await source.fetch(batch.kib)
+            if len(fetched.bytes) != batch.kib * KIB:
+                raise Unavailable("the entropy source sent the wrong amount")
+        except Exception as exc:
+            if batch is not None:
+                meter.mark_batch(batch.batch_id, "failed")
+            self._error = exc
+            log.error("pool_startup_check_failed", cause=str(exc), reason=reason_for(exc))
+        else:
+            if self._stopped:  # stop() ran during the check
+                meter.mark_batch(batch.batch_id, "failed")
+                log.warning("pool_startup_check_discarded", reason="stopped")
+                return
+            self._succeeded(batch.batch_id, fetched.bytes)
+        if not isinstance(self._error, Misconfigured):  # a bad token is not retried until a take asks
+            self._ensure_refill()
+
+    def _succeeded(self, batch_id: str, data: bytes) -> None:
+        self._error, self._last_success_at = None, datetime.now(UTC).isoformat()
+        self.add(batch_id, data)
+        meter.mark_batch(batch_id, "received")
+        self._notify()
 
     async def stop(self) -> None:
         """End the refill loop and discard what the pool holds."""
@@ -153,6 +193,10 @@ class Pool:
                     raise
                 failures += 1
                 self._error = exc
+                if isinstance(exc, Misconfigured):  # retrying a bad token only burns budget: the next take may try once
+                    log.error("pool_refill_failed", error="Misconfigured", cause=str(exc))
+                    self._notify()
+                    return
                 delay = min(BACKOFF_MAX_S, BACKOFF_BASE_S * 2 ** (failures - 1)) * random.uniform(0.5, 1)  # noqa: S311
                 log.warning(
                     "pool_refill_failed", error=type(exc).__name__, attempt=failures, retry_in_s=round(delay, 2)
@@ -160,10 +204,8 @@ class Pool:
                 self._notify()
                 await asyncio.sleep(delay)
                 continue
-            failures, self._error = 0, None
-            self.add(batch.batch_id, fetched.bytes)
-            meter.mark_batch(batch.batch_id, "received")
-            self._notify()
+            failures = 0
+            self._succeeded(batch.batch_id, fetched.bytes)
 
 
 STUB_BATCH_ID = "00000000-0000-4000-8000-0000000000b1"
@@ -179,13 +221,3 @@ async def take(n: int) -> Taken:
 @stub("S35")
 def status() -> PoolStatus:
     return PoolStatus(65536, 32768, 131072, "ok", None)
-
-
-@stub("S12")
-async def start() -> None:
-    return None
-
-
-@stub("S12")
-async def stop() -> None:
-    return None
