@@ -50,3 +50,6 @@ call counters (calls by tool, errors by code, duration percentiles) kept per pro
 pool batch must exist in `batches`: `qrypt_entropy.stubs.seed_stub_batch` inserts it (the test suite does it once per
 session). `make mcp-call` runs `scripts/seed_stubs.py`, which also inserts the two stub credentials with real hashed keys
 and refuses a non-local database; it needs `KEY_HASH_SECRET` in the environment or `.env`. S20 removes both with the stubs.
+S17 (done): `scripts/seed.py` (`make seed`, `make seed-list-names`) creates the admin, `billing-agent` and `support-agent` through
+`Access.create_credential` and three seed tokens through `Tokens.storeSeedToken`, with no entropy source. It needs
+`KEY_HASH_SECRET` and `TOKEN_PEPPER` in the environment. It owns no stubs, so the stub tables above are unchanged.

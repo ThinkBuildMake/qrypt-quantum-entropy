@@ -27,7 +27,7 @@ export DATABASE_URL
 GATE_P95_MS ?= 50
 export GATE_P95_MS
 
-.PHONY: help install db-url db-up db-down db-reset migrate spike-roles mcp-list mcp-call report test lint gate \
+.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mcp-list mcp-call report test lint gate \
         test-db-restart check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
@@ -71,6 +71,12 @@ migrate: ## apply migrations (safe to run twice)
 
 spike-roles: ## spike S-1: insert-only roles work on DATABASE_URL (run as an admin)
 	$(UV) python scripts/spike_roles.py
+
+seed: ## create 1 admin, 2 clients and 3 seed tokens (keys printed once; needs KEY_HASH_SECRET and TOKEN_PEPPER)
+	$(UV) python scripts/seed.py
+
+seed-list-names: ## list the seeded credential names and seed-token owners
+	$(UV) python scripts/seed.py list-names
 
 mcp-list: ## list the MCP tools of the stub server over stdio
 	@rm -f logs/server.log
