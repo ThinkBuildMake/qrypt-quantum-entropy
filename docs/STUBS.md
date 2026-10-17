@@ -37,7 +37,7 @@ Not decorated but also provisional:
 | Test keys `stub-client-key`, `stub-admin-key` | constants in `service/access.py`; accepted only when `tests/conftest.py` has inserted credential rows for them (S05 made Access real: HMAC-hashed keys in `credentials`, revocation, `createClient` / `revokeClient`). The MCP start check on connect and every call is still S06 | S06 |
 | `service/pool.py` module-level `take`/`status` | still stubs: the real `Pool` class (S10: take, status, stop, background refill) is built and tested but not yet instantiated by the server, so issuance keeps its synthetic bytes | S20 wires a running `Pool` in and removes them |
 | `transport/http_app.py` and `transport/mcp_server.py` | real transports; their routes and tools call the stub modules above | each wiring story as listed |
-| `storage/db.py` | pool helper, unused by the stubs | S04 (restart recovery), then modules |
+| `storage/db.py` | real since S04: shared pool per URL, checked before use (reconnects after a restart), `connection()` maps an unreachable database to `TemporarilyUnavailable` (503 / tool error, no value). Modules should use `db.connection`; `meter` already does | done |
 
 S07 (done): `meter.reserve` and `meter.mark_batch` are real and use the database. The callers (Pool, Entropy source) are
 still stubs, so nothing in the running flows calls them until S10 and S20. The 80% and 100% "once" guard for refusals is

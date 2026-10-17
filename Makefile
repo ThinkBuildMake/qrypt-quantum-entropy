@@ -28,7 +28,7 @@ GATE_P95_MS ?= 50
 export GATE_P95_MS
 
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles mcp-list mcp-call report test lint gate \
-        check-imports check-language secret-scan run-http config-show
+        test-db-restart check-imports check-language secret-scan run-http config-show
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -94,6 +94,9 @@ lint: ## ruff
 
 test: ## offline test suite with coverage
 	$(UV) pytest --cov --cov-report=term-missing:skip-covered
+
+test-db-restart: ## opt-in: really restart the local Postgres (disrupts other worktrees; not part of the gate)
+	ALLOW_DB_RESTART=1 $(UV) pytest tests/test_dbrecover.py -k 'restart or survive' --no-cov
 
 check-imports:
 	$(UV) python tools/check_imports.py src
