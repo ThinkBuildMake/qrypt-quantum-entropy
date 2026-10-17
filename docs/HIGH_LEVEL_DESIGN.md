@@ -199,7 +199,7 @@ The test and load harness (CI) calls every route and tool, and reads the databas
 
 ### Relational database
 
-**Why it exists:** every "never lose" entity (§3) and the meter must survive a restart (RL-4). SQL with separate roles is fixed by GC-5 so that AZ-3 and VR-10 are enforced by the database, not the application. **Holds / does:** all entities in §3. **Provided by platform:** backups, daily, accepted by the owner. Acknowledged writes are committed before a value is returned. The same engine runs locally for the offline suite (GC-5, EV-4).
+**Why it exists:** every "never lose" entity (§3) and the meter must survive a restart (RL-4). SQL with separate roles is fixed by GC-5 so that AZ-3 and VR-10 are enforced by the database, not the application. **Holds / does:** all entities in §3. **Provided by platform:** no backups on the free database (`STACK.md`); a daily encrypted dump job from CI covers RL-7, and the owner accepts a daily backup. Acknowledged writes are committed before a value is returned. The same engine runs locally for the offline suite (GC-5, EV-4).
 
 ### Entropy service (external)
 
@@ -217,7 +217,7 @@ The test and load harness (CI) calls every route and tool, and reads the databas
 | Cache | The pool is the buffer. Reads are rare |
 | Load balancer, second instance | One hosted instance; peak live load is about 0.001/s |
 | Object storage, CDN, search | No files, media or text search |
-| Scheduler | The 5 s status report and the refill are in-process timers |
+| Scheduler | The 5 s status report and the refill are in-process timers. The one clock-driven job, the daily backup, runs from CI (`STACK.md`) |
 
 **What to add next**
 
@@ -234,7 +234,7 @@ Final at this scale: total volume is capped at 163,840 issuances by the budget (
 | Language model | $0, free-tier or local (GC-3) | $0 |
 | **Total** | **$0** | **$0 — within the $0 budget (GC-2), if free tiers exist** |
 
-Exact prices and free-tier terms are in `STACK.md`. Two things could break $0: a free host that sleeps (DP-2 needs it up for 14 days [prop]), and a free database that offers no separate roles.
+Exact prices and free-tier terms are in `STACK.md`. Two things could break $0: a free database that offers no separate roles (spike S-1 in `STACK.md`), and an expired free database that would need a paid upgrade. A free host that sleeps is accepted for the demo (owner, 2026-10-17).
 
 ## 7. Open questions and upstream fixes
 

@@ -222,11 +222,11 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 
 | ID | Requirement | Verified by | Trace | Priority |
 |---|---|---|---|---|
-| PF-1 | Tool-call latency on a warm pool is < 50 ms at p95 [src B-PB], measured at the MCP client from sending the request to receiving the response. 1,000 calls over stdio, mixed evenly across the three tools, each asking for ≤ 64 bytes [prop], against the mocked upstream and a database on the same host as the server [prop]. Every call writes its audit row before it returns (RL-6), so a database a region away (50–300 ms a round trip) could not meet this. | Committed scripted MCP client; p50, p95, p99 written to the results file | B-PB, P | Must |
+| PF-1 | Tool-call latency on a warm pool is < 50 ms at p95 [src B-PB], measured at the MCP client from sending the request to receiving the response. 1,000 calls over stdio, mixed evenly across the three tools, each asking for ≤ 64 bytes [prop], against the mocked upstream and a local database, the Docker Compose Postgres the test suite uses [prop]. The results file names the database the run used. *Why this reads as it does:* the brief measures a scripted benchmark against a mocked upstream and says nothing about the database. Every call writes its audit row before it returns (RL-6), so the live demo, which writes to the hosted database over the internet (50–300 ms a round trip), is not held to this figure [src user, 2026-10-17]. | Committed scripted MCP client; p50, p95, p99 and the database used written to the results file | B-PB, P | Must |
 | PF-2 | 100 concurrent callers are sustained with 0 errors [src B-PB]. "Sustained" means 100 calls in flight at all times for at least 30 s [prop], against a mock that enforces Qrypt's rate limit and adds 200 ms of latency [prop]. Throughput and error rate are reported. | Committed k6, Locust or scripted client; results file | B-PB, B-C2 | Must |
 | PF-3 | At least 64 KiB are served per upstream request [src B-PB], computed over the PF-2 run as KiB served ÷ upstream requests (the ≤ 1 KiB startup check, DE-5, is excluded). Individual upstream requests therefore ask for ≥ 64 KiB. | Ratio from the budget meter at the end of the load test | B-PB, P | Must |
 | PF-4 | An end user gets the agent's reply with a code within 10 s, language-model time included [src user, 2026-10-17]. | Scripted agent run over the golden set against the real model; p95 of reply time in the results file | FR-2.1, FR-2.2 | Must |
-| PF-5 | `POST /verify`, each admin route and the metrics endpoint answer in ≤ 1 s at p95 with the database on the same host [prop]. | Scripted requests, 100 per route, p95 in the results file | FR-2.4, FR-4, FR-5, OB-4 | Should |
+| PF-5 | `POST /verify`, each admin route and the metrics endpoint answer in ≤ 1 s at p95 once the service is awake, against the local database [prop]. The first request after idle on the free host may take about a minute; accepted for the demo [src user, 2026-10-17]. | Scripted requests, 100 per route, p95 in the results file | FR-2.4, FR-4, FR-5, OB-4 | Should |
 
 ### 3.4 Scalability (SC-)
 
@@ -250,7 +250,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 
 | ID | Requirement | Verified by | Trace | Priority |
 |---|---|---|---|---|
-| OB-1 | `GET /health` returns pool level, the low and high marks, and upstream status (ok, degraded, failing or misconfigured with time of last success) in ≤ 200 ms [prop], with the age of the report it shows. If the last report is older than 15 s [prop] it says "not reporting". | Request against a running instance in each state, including a stopped server | B-CQ, FR-5.7, OB-9 | Must |
+| OB-1 | `GET /health` returns pool level, the low and high marks, and upstream status (ok, degraded, failing or misconfigured with time of last success) in ≤ 200 ms [prop] once the service is awake (the free host may take about a minute to answer after idle; accepted for the demo [src user, 2026-10-17]), with the age of the report it shows. If the last report is older than 15 s [prop] it says "not reporting". | Request against a running instance in each state, including a stopped server | B-CQ, FR-5.7, OB-9 | Must |
 | OB-2 | 100% of log lines are structured (parse as JSON) and carry timestamp, level, event, and client id when known; each tool-call line also carries its duration in ms. | Capture logs across the test suite and parse each line; assert every tool-call line has a duration | B-CQ, KEY_METRICS | Must |
 | OB-3 | 0 issued values appear in logs, traces, error messages or HTTP error bodies, in raw, hex or base64 form. Checked over the golden-set run and the load test. | Committed test captures all output and greps for every value returned | B-SEC | Gate |
 | OB-4 | A metrics endpoint exposes at least: pool level, upstream requests per 10 s, budget used, calls per tool, errors per code, tool-call duration (p50, p95, p99). | Request the endpoint and check the 6 series are present | B-CQ, KEY_METRICS | Must |
@@ -301,7 +301,7 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | ID | Requirement | Verified by | Trace | Priority |
 |---|---|---|---|---|
 | DP-1 | From a clean clone, a reader following only the README installs (including the local database), configures, seeds and passes the tests in ≤ 10 minutes, and has MCP Inspector connected in ≤ 15 minutes [prop]. | Timed walk-through in a fresh container | B-SUB | Must |
-| DP-2 | A deployed URL serves `POST /verify`, the admin API and `GET /health` over TLS, and stays up from submission until grading ends [tbd: no grading window was given; interim 14 days after submission [prop]]. | Scripted request to all three routes from outside, on submission day and on the last day | B-SUB | Must |
+| DP-2 | A deployed URL serves `POST /verify`, the admin API and `GET /health` over TLS, and stays reachable for at least 14 days after submission, within the free database's 30-day life [src user, 2026-10-17: 30 days is enough]. After idle the first request may take about a minute. The database is created on or after 2026-10-20 so its 30 days cover the window. | Scripted request to all three routes from outside, on submission day and on day 14 | B-SUB | Must |
 | DP-3 | The schema is created only by migrations. A clean database plus migrate yields a working app, and running migrate twice causes no error. | Migration test on an empty database | B-CQ, P | Must |
 | DP-4 | Dev, staging and prod differ only in environment configuration: switching profile needs 0 code changes. | Run the suite under two environment sets | B-CQ, P | Must |
 | DP-5 | CI runs the tests and a linter on every push; a failure of either marks the push failed. | CI history: runs on 100% of pushes to the working branch; green at submission | B-CQ, P | Must |
@@ -368,8 +368,8 @@ Every **[prop]** and **[tbd]** number. Status is *accepted*, *revised*, or *pend
 | RL-5 | 1,000 malformed inputs | Broad enough to cover each validation branch | pending review |
 | OB-1 | `/health` ≤ 200 ms; "not reporting" after 15 s | Cheap read of one row; 15 s = 3 missed reports | pending review |
 | OB-9 | Status report every 5 s | Cheap, and fresh enough for a health view | pending review |
-| PF-1 | Database on the same host as the server | Audit write sits in the call path; a remote database costs 50–300 ms | pending review |
-| PF-5 | ≤ 1 s at p95 for verify, admin and metrics | Not live interactions; 1 s keeps the user's flow | pending review |
+| PF-1 | Benchmark runs against the local database; the demo is not held to it | The brief's benchmark names a mocked upstream only; a remote database costs 50–300 ms per audit write | accepted (user, 2026-10-17) |
+| PF-5 | ≤ 1 s at p95 for verify, admin and metrics, once awake | Not live interactions; 1 s keeps the user's flow; cold start accepted | pending review |
 | DE-1 | One live server process at a time | The 30 per 10 s limit is per account; one builder, mock for tests | pending review |
 | OB-5 | Alert at 80% of budget | Leaves 2,048 KiB to act on, from 10,240 × 20% | pending review |
 | CP-4 | TLS 1.2 or higher | Widely supported minimum | pending review |
@@ -379,7 +379,7 @@ Every **[prop]** and **[tbd]** number. Status is *accepted*, *revised*, or *pend
 | EV-3 | 2 extra adversarial prompts | Brief names three; two more chosen to reach 5 | pending review |
 | CO-1 | Dev ≤ 1,024 KiB, demo ≤ 512 KiB | 10% and 5% of the 10,240 KiB cap; rest is reserve | pending review |
 | DP-1 | 10 min to passing tests; 15 min to Inspector | The brief says "in minutes" | pending review |
-| DP-2 | **[tbd]** Hosting window; interim 14 days | The grading window was not given | pending |
+| DP-2 | Reachable ≥ 14 days after submission, within the database's 30-day life | The grading window was not given; the owner says 30 days is enough | accepted (user, 2026-10-17) |
 
 **Open items that only a running system, an upstream fix or the owner can answer:**
 1. **Time zone.** Confirm CDT or CST for the deadline (GC-1).
