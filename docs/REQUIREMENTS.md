@@ -248,10 +248,13 @@ If a row below names a library, a component, or a way of meeting a threshold, it
 | ID | Requirement | Verified by | Trace | Priority |
 |---|---|---|---|---|
 | OB-1 | `GET /health` returns pool level, the low and high marks, and upstream status (ok, degraded, failing or misconfigured with time of last success) in ≤ 200 ms [prop]. | Request against a running instance in each state | B-CQ, FR-5.7 | Must |
-| OB-2 | 100% of log lines are structured (parse as JSON) and carry timestamp, level, event, and client id when known. | Capture logs across the test suite and parse each line | B-CQ | Must |
+| OB-2 | 100% of log lines are structured (parse as JSON) and carry timestamp, level, event, and client id when known; each tool-call line also carries its duration in ms. | Capture logs across the test suite and parse each line; assert every tool-call line has a duration | B-CQ, KEY_METRICS | Must |
 | OB-3 | 0 issued values appear in logs, traces, error messages or HTTP error bodies, in raw, hex or base64 form. Checked over the golden-set run and the load test. | Committed test captures all output and greps for every value returned | B-SEC | Gate |
-| OB-4 | A metrics endpoint exposes at least: pool level, upstream requests per 10 s, budget used, calls per tool, errors per code. | Request the endpoint and check the 5 series are present | B-CQ | Must |
+| OB-4 | A metrics endpoint exposes at least: pool level, upstream requests per 10 s, budget used, calls per tool, errors per code, tool-call duration (p50, p95, p99). | Request the endpoint and check the 6 series are present | B-CQ, KEY_METRICS | Must |
 | OB-5 | A log event is raised when budget use first passes 80% [prop] and when it reaches 100%; this is the "budget alert" in `U§5` UC-4. | Test with a small budget on the mock | U§5 UC-4 | Must |
+| OB-6 | Every `POST /verify` records exactly 1 outcome, one of `redeemed`, `already_used`, `expired`, `unknown` or `rate_limited`, with owner and timestamp and never the value presented. A daily count per outcome can be read from storage. | Test: one attempt per outcome; row count equals attempts; grep records for the presented values, 0 matches | KEY_METRICS, FR-2.4–2.6, AZ-6, CP-3 | Must |
+| OB-7 | The agent checks every reply it sends against the values tools returned in that conversation and records one count per reply: values found, values backed by a tool return. Any unbacked value is logged as an event (without the value). | Test with a mocked model that invents a code: the event is logged and the count is 1; with an honest model the count is 0 | KEY_METRICS, EV-2, B-AI | Must |
+| OB-8 | The log carries an event when the pool first cannot cover a call and an event when the resulting error is returned, so the time between them can be read from logs. | Mock holds 429; both events present with timestamps; the gap matches RL-1 | KEY_METRICS, RL-1 | Must |
 
 ### 3.7 Compliance and data handling (CP-)
 

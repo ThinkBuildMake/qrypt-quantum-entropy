@@ -14,7 +14,7 @@ Success means every code the agent shows an end user was issued by the product, 
 
 **What is it?** The share of redemption attempts each day that present a code the product has no record of issuing. A model-invented code, if one ever reached a user, would land here the moment the user tries it.
 
-**How we measure it.** Every call to `POST /verify` records one outcome: `redeemed`, `already_used`, `expired`, `unknown` or `rate_limited`. The number is `unknown` ÷ (all attempts except `rate_limited`), per UTC day. The outcome is stored; the value presented is not (CP-3). The outcome record does not exist yet (see upstream fixes).
+**How we measure it.** Every call to `POST /verify` records one outcome: `redeemed`, `already_used`, `expired`, `unknown` or `rate_limited`. The number is `unknown` ÷ (all attempts except `rate_limited`), per UTC day. The outcome is stored; the value presented is not (CP-3). The outcome record is OB-6.
 
 **Target.** Lower is better; 0 is the ideal. There is no baseline for this product, so the numeric target is set after the first 14 days of data. The Irregular figure above (20 of 50 repeats) measures chatbots writing passwords directly, not this flow, so it is not used as a baseline.
 
@@ -42,9 +42,6 @@ Success means every code the agent shows an end user was issued by the product, 
 
 ## Upstream fixes and open questions
 
-- **Redemption outcomes** → add a functional row under FR-2 and an observability row: every `POST /verify` records its outcome (including `unknown` and `rate_limited`) with no value.
-- **Reply check on every agent reply** → add to EV-2 (or an OB row): the agent runs the tool-return comparison at runtime and records a count, not only in tests.
-- **Call duration** → OB-2 lists timestamp, level, event and client id but not duration; add duration, and a latency series to OB-4.
-- **Time to "unavailable"** → add the two events (pool cannot cover, error returned) to the OB-2 log events so RL-1 can be read from logs.
+- **Done in `REQUIREMENTS.md`:** OB-6 (redemption outcomes), OB-7 (reply check on every reply), OB-2 and OB-4 (call duration and latency series), OB-8 (events for the 2 s "unavailable" timing).
 - **Success target** → set the numeric target for the success metric after 14 days of data.
 - **Success sentence** → the owner agrees or rewords it before the design relies on it.
