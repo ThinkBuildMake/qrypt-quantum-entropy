@@ -1,22 +1,32 @@
 """Issuance: the tools and the audit record. Owns `issuances`, `issuance_batches`.
 
-S01 STUB: values are a fixed pattern from the stub pool, no audit row. Real: S13 (get_random_bytes + audit),
-S14 (random_int), S15 (generate_token), S23 (getIssuance); wired to the transports by S20 and S33.
+get_random_bytes and the audit record are real (S13). Still S01 stubs: S14 (random_int), S15 (generate_token),
+S23 (getIssuance); wired to the transports by S20 and S33.
 """
 
+import asyncio
 import base64
+import time
 import uuid
+from collections import deque
 from datetime import UTC, datetime
 
+import psycopg
+
 from qrypt_entropy.config import get_settings
-from qrypt_entropy.errors import InvalidArgument
-from qrypt_entropy.models import IssuedValue, Principal, ToolMetadata
+from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable
+from qrypt_entropy.logs import get_logger
+from qrypt_entropy.models import BatchSlice, IssuedValue, Principal, ToolMetadata
 from qrypt_entropy.service import pool
+from qrypt_entropy.storage.db import connection
 from qrypt_entropy.stubs import stub
 
+log = get_logger("qrypt_entropy.issuance")
 SAFE_INT = 2**53 - 1
 KINDS = {"api_key": "stub-api-key-0000", "otp_6": "000000", "uuid_v4": "00000000-0000-4000-8000-000000000000"}
 _calls: dict[str, int] = {}
+_errors: dict[str, int] = {}
+_durations_ms: deque[float] = deque(maxlen=10_000)
 
 
 def _metadata(n: int, batch_id: str) -> ToolMetadata:
@@ -29,16 +39,57 @@ def _count(tool: str) -> None:
     _calls[tool] = _calls.get(tool, 0) + 1
 
 
-@stub("S13")
+def _audit(principal: Principal, tool: str, n: int, slices: list[BatchSlice]) -> ToolMetadata:
+    """One transaction: the issuance row and its batch rows. Commits before the caller sees any value (VR-9, RL-6)."""
+    reference = uuid.uuid4()
+    try:
+        with connection() as conn:
+            conn.execute(
+                "INSERT INTO issuances (id, client_id, tool, bytes_consumed) VALUES (%s, %s, %s, %s)",
+                (reference, principal.client_id, tool, n),
+            )
+            conn.cursor().executemany(
+                "INSERT INTO issuance_batches (issuance_id, batch_id, byte_offset, byte_count) VALUES (%s, %s, %s, %s)",
+                [(reference, s.batch_id, s.byte_offset, s.byte_count) for s in slices],
+            )
+            source = conn.execute("SELECT source FROM batches WHERE id = %s", (slices[0].batch_id,)).fetchone()[0]
+    except psycopg.Error as exc:
+        log.error("audit_write_failed", tool=tool, error=type(exc).__name__)
+        raise TemporarilyUnavailable("the call could not be recorded, so no value was issued") from exc
+    batch_ids = list(dict.fromkeys(s.batch_id for s in slices))
+    return ToolMetadata(
+        source=source, batch_id=batch_ids[0], batch_ids=batch_ids, bytes_consumed=n, reference=str(reference)
+    )
+
+
+async def _audited(tool: str, principal: Principal, n: int) -> tuple[bytes, ToolMetadata]:
+    taken = await pool.take(n)
+    metadata = await asyncio.to_thread(_audit, principal, tool, n, taken.slices)
+    return taken.bytes, metadata
+
+
+def record_error(code: str, duration_ms: float) -> None:
+    """Count a failed call, including one the transport rejected before it reached a tool."""
+    _errors[code] = _errors.get(code, 0) + 1
+    _durations_ms.append(duration_ms)
+
+
 async def get_random_bytes(principal: Principal, length: int, encoding: str) -> IssuedValue:
-    if encoding not in ("hex", "base64"):
-        raise InvalidArgument("encoding must be hex or base64")
-    if not 1 <= length <= get_settings().per_call_max_bytes:
-        raise InvalidArgument(f"length must be 1 to {get_settings().per_call_max_bytes}")
-    taken = await pool.take(length)
-    value = taken.bytes.hex() if encoding == "hex" else base64.b64encode(taken.bytes).decode()
-    _count("get_random_bytes")
-    return IssuedValue(value=value, metadata=_metadata(length, taken.slices[0].batch_id))
+    started = time.perf_counter()
+    tool = "get_random_bytes"
+    try:
+        maximum = get_settings().per_call_max_bytes
+        if encoding not in ("hex", "base64"):
+            raise InvalidArgument("encoding must be hex or base64")
+        if not 1 <= length <= maximum:
+            raise InvalidArgument(f"length must be from 1 to {maximum}, the per-call maximum")
+        data, metadata = await _audited(tool, principal, length)
+    except AppError as err:
+        record_error(err.code, (time.perf_counter() - started) * 1000)
+        raise
+    _count(tool)
+    _durations_ms.append((time.perf_counter() - started) * 1000)
+    return IssuedValue(value=data.hex() if encoding == "hex" else base64.b64encode(data).decode(), metadata=metadata)
 
 
 @stub("S14")
@@ -90,10 +141,20 @@ def get_issuance(reference: str) -> dict:
     }
 
 
-@stub("S28")
 def call_stats() -> dict:
+    ordered = sorted(_durations_ms)
+
+    def percentile(q: int) -> float:
+        return round(ordered[min(len(ordered) - 1, len(ordered) * q // 100)], 3) if ordered else 0
+
     return {
         "callsByTool": dict(_calls),
-        "errorsByCode": {},
-        "toolCallDurationMs": {"p50": 0, "p95": 0, "p99": 0},
+        "errorsByCode": dict(_errors),
+        "toolCallDurationMs": {"p50": percentile(50), "p95": percentile(95), "p99": percentile(99)},
     }
+
+
+def reset_call_stats() -> None:
+    _calls.clear()
+    _errors.clear()
+    _durations_ms.clear()

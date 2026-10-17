@@ -17,11 +17,9 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.pool` | `status` (module-level) | S35 | S35 |
 | `qrypt_entropy.service.pool` | `start` | S12 | S20 |
 | `qrypt_entropy.service.pool` | `stop` | S12 | S20 |
-| `qrypt_entropy.service.issuance` (`service/issuance.py`) | `get_random_bytes` | S13 | S20 |
 | `qrypt_entropy.service.issuance` | `random_int` | S14 | S20 |
 | `qrypt_entropy.service.issuance` | `generate_token` | S15 | S20 |
 | `qrypt_entropy.service.issuance` | `get_issuance` | S23 | S33 |
-| `qrypt_entropy.service.issuance` | `call_stats` | S28 | S35 |
 | `qrypt_entropy.service.tokens` | `redeem` | S21 (S22 rate limit) | S33 |
 | `qrypt_entropy.service.status` (`service/status.py`) | `get_health` | S29 | S35 |
 | `qrypt_entropy.service.status` | `get_metrics` | S30 | S35 |
@@ -44,3 +42,11 @@ still stubs, so nothing in the running flows calls them until S10 and S20. The 8
 kept per process (a reserve that crosses a threshold logs it exactly once across all processes).
 
 S11 (done): `Pool.take` waits up to 2 s for a refill and then raises `PoolStarved` (code = reason: `temporarily_unavailable`, `budget_exhausted` or `upstream_misconfigured`); a failed refill is retried after a growing pause (0.5 s doubling to 10 s, with jitter) instead of at once; the `pool_cannot_cover` and `pool_error_returned` events (OB-8) are logged. `RateLimited` was added to `errors.py` with the same definition S09 uses. The module-level `take`/`status` stubs are unchanged (S20 and S35).
+
+S13 (done): `Issuance.get_random_bytes` and `Issuance.call_stats` are real: validation, the audit transaction (`issuances`
+and `issuance_batches`, committed before the value returns), a structured `tool_call` log line with `duration_ms`, and
+call counters (calls by tool, errors by code, duration percentiles) kept per process. `call_stats` counts only
+`get_random_bytes` until S14 and S15 land; S28 only has to read it. Because audit rows have foreign keys, the stub
+pool batch must exist in `batches`: `qrypt_entropy.stubs.seed_stub_batch` inserts it (the test suite does it once per
+session). `make mcp-call` runs `scripts/seed_stubs.py`, which also inserts the two stub credentials with real hashed keys
+and refuses a non-local database; it needs `KEY_HASH_SECRET` in the environment or `.env`. S20 removes both with the stubs.

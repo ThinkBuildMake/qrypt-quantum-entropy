@@ -14,6 +14,7 @@ from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailab
 from qrypt_entropy.logs import configure_logging, get_logger, register_secret
 from qrypt_entropy.models import IssuedValue, Principal
 from qrypt_entropy.service import access, issuance
+from qrypt_entropy.storage.db import close_pools
 
 log = get_logger("mcp")
 
@@ -29,6 +30,7 @@ class EntropyServer(MCPServer):
     """Turns every tool failure, including argument validation, into an ErrorBody (CT-2, CT-4, RL-5)."""
 
     async def call_tool(self, name, arguments, context=None):
+        started = time.perf_counter()
         try:
             return await super().call_tool(name, arguments, context)
         except ToolError as exc:
@@ -39,6 +41,8 @@ class EntropyServer(MCPServer):
                 raise ToolError(cause.json()) from exc
             if isinstance(cause, ValidationError):
                 fields = sorted({".".join(str(p) for p in e["loc"]) for e in cause.errors()})
+                log.info("tool_call", tool=name, error="invalid_argument", duration_ms=_ms(started))
+                issuance.record_error("invalid_argument", _ms(started))
                 raise ToolError(InvalidArgument(f"invalid arguments: {', '.join(fields)}").json()) from exc
             if name not in TOOL_ROLES:
                 raise ToolError(InvalidArgument("unknown tool").json()) from exc
@@ -106,6 +110,7 @@ def main() -> int:
         build_server(lambda: get_settings().mcp_client_key).run("stdio")
     finally:
         access.close_pools()  # a pool left open prints a traceback at exit, and a log line must always be JSON
+        close_pools()
     return 0
 
 

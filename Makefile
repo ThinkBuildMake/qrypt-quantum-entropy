@@ -76,8 +76,8 @@ mcp-list: ## list the MCP tools of the stub server over stdio
 	@rm -f logs/server.log
 	$(UV) python scripts/mcp_client.py list
 
-mcp-call: ## call a tool: make mcp-call TOOL=get_random_bytes ARGS='{"length":8,"encoding":"hex"}'
-	$(UV) python scripts/mcp_client.py call "$(TOOL)" '$(ARGS)'
+mcp-call: db-up migrate ## call a tool: make mcp-call TOOL=get_random_bytes ARGS='{"length":8,"encoding":"hex"}'
+	$(UV) python scripts/seed_stubs.py && $(UV) python scripts/mcp_client.py call "$(TOOL)" '$(ARGS)'
 
 run-http: ## serve the stub HTTP service locally on :8000
 	$(UV) uvicorn qrypt_entropy.transport.http_app:app --port 8000

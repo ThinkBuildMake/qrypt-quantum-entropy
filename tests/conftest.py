@@ -10,8 +10,10 @@ from psycopg import sql
 from sqlalchemy.engine import make_url
 
 from qrypt_entropy.config import get_settings
-from qrypt_entropy.service import access
+from qrypt_entropy.service import access, meter
 from qrypt_entropy.service.access import STUB_ADMIN_KEY, STUB_CLIENT_KEY, close_pools, hash_key
+from qrypt_entropy.storage.db import close_pools as close_db_pools
+from qrypt_entropy.stubs import seed_stub_batch
 from tests.test_migrations import migrate
 
 os.environ.setdefault("KEY_HASH_SECRET", "test-only-key-hash-secret")  # not a real secret
@@ -68,10 +70,13 @@ def stub_credentials():
                     "ON CONFLICT (id) DO UPDATE SET key_hash = EXCLUDED.key_hash",
                     (cid, name, role, hash_key(key)),
                 )
+        seed_stub_batch(base_url())
     except psycopg.Error:
         pass  # no migrated database: only tests that need one will fail
     yield
     close_pools()
+    close_db_pools()
+    meter.close_pools()
 
 
 @pytest.fixture
