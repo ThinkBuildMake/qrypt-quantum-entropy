@@ -1,0 +1,3 @@
+docs/STUBS.md merge=union
+docs/DEVIATIONS.md merge=union
+.env.example merge=union
