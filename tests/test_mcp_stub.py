@@ -4,11 +4,13 @@ import sys
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 
+from tests.conftest import server_env
+
 TOOLS = {"get_random_bytes", "random_int", "generate_token"}
 
 
 def params(tmp_path, key="stub-client-key"):
-    env = {"MCP_CLIENT_KEY": key, "LOG_FILE": str(tmp_path / "server.log")}
+    env = {"MCP_CLIENT_KEY": key, "LOG_FILE": str(tmp_path / "server.log"), **server_env()}
     return StdioServerParameters(command=sys.executable, args=["-m", "qrypt_entropy.transport.mcp_server"], env=env)
 
 

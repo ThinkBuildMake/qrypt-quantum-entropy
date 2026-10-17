@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     qrypt_api_token: SecretStr | None = None
     qrypt_base_url: str = "https://api-eus.qrypt.com"
     qrypt_timeout_seconds: float = 5.0
+    key_hash_secret: str | None = None
     per_call_max_bytes: int = 1024
     pool_low_mark_bytes: int = 32 * 1024
     pool_high_mark_bytes: int = 128 * 1024

@@ -18,6 +18,7 @@ def server_params() -> StdioServerParameters:
         "PATH": os.environ.get("PATH", ""),
         "MCP_CLIENT_KEY": os.environ.get("MCP_CLIENT_KEY", "stub-client-key"),
         "LOG_FILE": os.environ.get("LOG_FILE", "logs/server.log"),
+        **{k: os.environ[k] for k in ("DATABASE_URL", "KEY_HASH_SECRET") if k in os.environ},
     }
     return StdioServerParameters(command=sys.executable, args=["-m", "qrypt_entropy.transport.mcp_server"], env=env)
 

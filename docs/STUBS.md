@@ -10,11 +10,6 @@ Each module lives in one file, so module stories do not collide.
 
 | Module (file) | Stub | Replaced by | Wired by |
 |---|---|---|---|
-| `qrypt_entropy.service.access` (`service/access.py`) | `authenticate` | S05 (S06 for connect) | S20 |
-| `qrypt_entropy.service.access` | `hash_key` | S05 | S20 |
-| `qrypt_entropy.service.access` | `create_credential` | S05 | S20 |
-| `qrypt_entropy.service.access` | `create_client` | S24 | S34 |
-| `qrypt_entropy.service.access` | `revoke_client` | S24 | S34 |
 | `qrypt_entropy.service.meter` (`service/meter.py`) | `get_usage` | S24 | S34 |
 | `qrypt_entropy.service.meter` | `set_budget` | S24 | S34 |
 | `qrypt_entropy.upstream.source` (`upstream/source.py`) | _none: `fetch` and `request_stats` are real since S08 (no retry or rate limit until S09); mock in `tests/mock_qrypt.py`_ | S08 | S20 |
@@ -39,7 +34,7 @@ Not decorated but also provisional:
 |---|---|---|
 | `service/report.py` panels fed from logs or server reports (5 of 9) | always "no data" | S19 (logs), S28 (reports); table-fed panels refined by S18 |
 | Database roles, grants, guard triggers (append-only, meter-only-rises, one-way used flag) | real since S02: migration `s02_dbpolicy` (roles have no password until `scripts/set_role_passwords.py` runs; tables stay owned by whoever runs the migration, see DEVIATIONS 9) | done |
-| Stub keys `stub-client-key`, `stub-admin-key` | fixed test keys inside `service/access.py` | S05, S06 |
+| Test keys `stub-client-key`, `stub-admin-key` | constants in `service/access.py`; accepted only when `tests/conftest.py` has inserted credential rows for them (S05 made Access real: HMAC-hashed keys in `credentials`, revocation, `createClient` / `revokeClient`). The MCP start check on connect and every call is still S06 | S06 |
 | `service/pool.py` module-level `take`/`status` | still stubs: the real `Pool` class (S10: take, status, stop, background refill) is built and tested but not yet instantiated by the server, so issuance keeps its synthetic bytes | S20 wires a running `Pool` in and removes them |
 | `transport/http_app.py` and `transport/mcp_server.py` | real transports; their routes and tools call the stub modules above | each wiring story as listed |
 | `storage/db.py` | pool helper, unused by the stubs | S04 (restart recovery), then modules |

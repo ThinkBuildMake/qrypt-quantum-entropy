@@ -7,6 +7,7 @@ import random
 import statistics
 import string
 import time
+import uuid
 from urllib.parse import quote
 
 import pytest
@@ -14,7 +15,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from mcp.client import Client
 
-from qrypt_entropy.service.access import STUB_ADMIN_KEY, STUB_CLIENT_KEY
+from qrypt_entropy.service.access import STUB_ADMIN_KEY, STUB_CLIENT_KEY, create_client
 from qrypt_entropy.transport.http_app import app
 from qrypt_entropy.transport.mcp_server import TOOL_ROLES, build_server
 from tests.conftest import GATE_STATS
@@ -41,13 +42,13 @@ def http_routes():
             yield route, roles  # roles None means the route is open
 
 
-def sample_path(path):
-    return path.replace("{reference}", REF).replace("{client_id}", REF)
+def sample_path(path, client_id=REF):
+    return path.replace("{reference}", REF).replace("{client_id}", client_id)
 
 
 def sample_body(route):
     paths = {"/verify": {"owner": "user-42", "value": "123456"}, "/admin/budget": {"capKib": 10},
-             "/admin/clients": {"name": "c"}}  # fmt: skip
+             "/admin/clients": {"name": f"matrix-{uuid.uuid4().hex}"}}  # fmt: skip
     return paths.get(route.path)
 
 
@@ -77,11 +78,14 @@ async def test_ac10_authorization_matrix_over_every_tool_and_route():
     http = TestClient(app, raise_server_exceptions=False)
     routes = list(http_routes())
     assert len(routes) >= 8
+    existing_client = create_client(f"matrix-{uuid.uuid4().hex}")["client"]["id"]
     for route, roles in routes:
         method = sorted(route.methods)[0]
         for who, key in CREDENTIALS.items():
             headers = {"Authorization": f"Bearer {key}"} if key else {}
-            resp = http.request(method, sample_path(route.path), headers=headers, json=sample_body(route))
+            resp = http.request(
+                method, sample_path(route.path, existing_client), headers=headers, json=sample_body(route)
+            )
             allowed = roles is None or ROLE_OF[who] in roles
             assert (resp.status_code < 400) == allowed, (method, route.path, who, resp.status_code)
             if not allowed:
