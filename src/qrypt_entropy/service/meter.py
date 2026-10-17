@@ -1,6 +1,6 @@
 """Meter: the budget and the upstream request record. Owns `budget`, `batches`.
 
-S01 STUB: synthetic numbers, no database. Real behaviour: S07 (reserve/mark) and S24 (usage, setBudget).
+S07: reserve and mark_batch (MCP side writes used_kib). S24: get_usage and set_budget (HTTP side writes cap_kib).
 """
 
 import uuid
@@ -9,10 +9,10 @@ from qrypt_entropy.errors import BudgetExhausted, InvalidArgument, NotFound
 from qrypt_entropy.logs import get_logger
 from qrypt_entropy.models import Batch
 from qrypt_entropy.storage import db
-from qrypt_entropy.stubs import stub
 
 _STUB_CAP_KIB = 10240
 _MAX_BATCH_KIB = 512
+_MAX_CAP_KIB = 2**63 - 1  # the column is a bigint
 _log = get_logger("qrypt_entropy.meter")
 _fired: set[tuple[str, int]] = set()  # (database url, threshold) already logged by this process
 
@@ -69,14 +69,27 @@ def mark_batch(batch_id: str, outcome: str, *, url: str | None = None) -> None:
         raise NotFound("no such batch")
 
 
-@stub("S24")
-def get_usage() -> dict:
+def get_usage(*, url: str | None = None) -> dict:
+    """The cap, the KiB used, and bytes consumed per client, summed from the audit rows (FR-5.1, CH-3)."""
+    with db.connection(url) as conn:
+        cap, used = conn.execute("SELECT cap_kib, used_kib FROM budget WHERE id = 1").fetchone()
+        rows = conn.execute(
+            "SELECT c.id, c.name, sum(i.bytes_consumed)::bigint FROM issuances i "
+            "JOIN credentials c ON c.id = i.client_id GROUP BY c.id, c.name ORDER BY c.name, c.id"
+        ).fetchall()
     return {
-        "budget": {"capKib": _STUB_CAP_KIB, "usedKib": 0},
-        "perClient": [{"clientId": "00000000-0000-4000-8000-0000000000c1", "name": "stub-client", "bytesConsumed": 0}],
+        "budget": {"capKib": cap, "usedKib": used},
+        "perClient": [{"clientId": str(cid), "name": name, "bytesConsumed": n} for cid, name, n in rows],
     }
 
 
-@stub("S24")
-def set_budget(cap_kib: int) -> dict:
-    return {"budget": {"capKib": cap_kib, "usedKib": 0}}
+def set_budget(cap_kib: int, *, url: str | None = None) -> dict:
+    """Set the cap. Lowering it below use is accepted: the budget is then exhausted until it is raised (A-4)."""
+    if type(cap_kib) is not int or not 0 <= cap_kib <= _MAX_CAP_KIB:
+        raise InvalidArgument("capKib must be a whole number from 0 to 2^63-1")
+    with db.connection(url) as conn:
+        used = conn.execute(
+            "UPDATE budget SET cap_kib = %s, updated_at = now() WHERE id = 1 RETURNING used_kib", (cap_kib,)
+        ).fetchone()[0]
+    _fired.discard((url or "", 100))  # a new cap starts a new episode: the next exhaustion is logged again
+    return {"budget": {"capKib": cap_kib, "usedKib": used}}

@@ -10,6 +10,7 @@ import time
 import uuid
 from urllib.parse import quote
 
+import psycopg
 import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
@@ -18,7 +19,18 @@ from mcp.client import Client
 from qrypt_entropy.service.access import STUB_ADMIN_KEY, STUB_CLIENT_KEY, create_client
 from qrypt_entropy.transport.http_app import app
 from qrypt_entropy.transport.mcp_server import TOOL_ROLES, build_server
-from tests.conftest import GATE_STATS
+from tests.conftest import GATE_STATS, base_url
+
+
+@pytest.fixture(autouse=True)
+def restore_budget_cap():
+    """These tests call PUT /admin/budget on the gate database: put the cap back so later reserves are not starved."""
+    with psycopg.connect(base_url()) as conn:
+        cap = conn.execute("SELECT cap_kib FROM budget").fetchone()[0]
+    yield
+    with psycopg.connect(base_url()) as conn:
+        conn.execute("UPDATE budget SET cap_kib = %s", (cap,))
+
 
 CREDENTIALS = {"none": None, "client": STUB_CLIENT_KEY, "admin": STUB_ADMIN_KEY}
 ROLE_OF = {"none": None, "client": "client", "admin": "admin"}

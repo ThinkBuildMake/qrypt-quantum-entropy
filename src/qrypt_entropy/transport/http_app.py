@@ -48,7 +48,7 @@ class VerifyBody(BaseModel):
 
 
 class BudgetBody(BaseModel):
-    capKib: StrictInt = Field(ge=0)  # noqa: N815
+    capKib: StrictInt = Field(ge=0, le=2**63 - 1)  # noqa: N815  (the column is a bigint)
 
 
 class ClientBody(BaseModel):
