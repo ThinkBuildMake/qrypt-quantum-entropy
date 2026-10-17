@@ -9,6 +9,7 @@ import asyncio
 import base64
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
@@ -27,11 +28,13 @@ class Logged:
 
 
 class MockQrypt:
-    def __init__(self, token: str = "mock-token-0123456789") -> None:  # noqa: S107
+    def __init__(self, token: str = "mock-token-0123456789", clock: Callable[[], float] = time.monotonic) -> None:  # noqa: S107
         self.token = token
+        self.clock = clock  # a test may scale time; the 10 s window and the log use it
         self.log: list[Logged] = []
         self.faults: list[int | str] = []  # consumed one per request: a status code or "drop"
         self.delay_s = 0.0
+        self.override: Callable[[int], int | None] | None = None  # request index -> status in place of a 200
         self._server: asyncio.Server | None = None
         self.port = 0
 
@@ -54,14 +57,15 @@ class MockQrypt:
     def _decide(self, size: str | None, auth: str | None) -> int | str:
         if self.faults:
             return self.faults.pop(0)
-        now = time.monotonic()
+        now = self.clock()
         if sum(1 for r in self.log[:-1] if now - r.at < WINDOW_S) >= LIMIT:
             return 429
         if auth != f"Bearer {self.token}":
             return 401
         if size is None or not size.isdigit() or not 1 <= int(size) <= 512:
             return 400
-        return 200
+        forced = self.override(len(self.log) - 1) if self.override else None
+        return forced or 200
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -71,7 +75,8 @@ class MockQrypt:
             parts = urlsplit(target)
             size = (parse_qs(parts.query).get("size") or [None])[0]
             auth = headers.get("authorization")
-            entry = Logged(time.monotonic(), parts.path, size, auth, None)
+            entry = Logged(self.clock(), parts.path, size, auth, None)
+            index = len(self.log)
             self.log.append(entry)
             outcome = self._decide(size, auth)
             if self.delay_s:
@@ -83,7 +88,7 @@ class MockQrypt:
             if outcome == 200:
                 block = base64.b64encode(bytes(range(256)) * 4).decode()
                 body = {"random": [block] * int(size), "size": int(size)}
-            self.log[-1] = Logged(entry.at, entry.path, size, auth, int(outcome))
+            self.log[index] = Logged(entry.at, entry.path, size, auth, int(outcome))
             data = json.dumps(body).encode()
             writer.write(
                 f"HTTP/1.1 {outcome} {REASONS.get(outcome, 'Error')}\r\nContent-Type: application/json\r\n"

@@ -107,6 +107,5 @@ async def test_mock_enforces_qrypt_limits(mock):
     for _ in range(30):
         await c.fetch(1)
     assert [r.status for r in mock.log].count(200) == 30
-    with pytest.raises(Unavailable):  # the 31st request in 10 s is answered 429; retry is S09's
-        await c.fetch(1)
-    assert mock.log[-1].status == 429
+    await c.fetch(1)  # the 31st request in 10 s waits for the window (S09) instead of being answered 429
+    assert [r.status for r in mock.log].count(429) == 0

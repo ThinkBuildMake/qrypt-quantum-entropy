@@ -12,7 +12,7 @@ Each module lives in one file, so module stories do not collide.
 |---|---|---|---|
 | `qrypt_entropy.service.meter` (`service/meter.py`) | `get_usage` | S24 | S34 |
 | `qrypt_entropy.service.meter` | `set_budget` | S24 | S34 |
-| `qrypt_entropy.upstream.source` (`upstream/source.py`) | _none: `fetch` and `request_stats` are real since S08 (no retry or rate limit until S09); mock in `tests/mock_qrypt.py`_ | S08 | S20 |
+| `qrypt_entropy.upstream.source` (`upstream/source.py`) | _none: `fetch` and `request_stats` are real since S08; S09 adds the 429 backoff and the 30-per-10-s limiter (one fetch can take about 2 min of backoff: callers wait on the Pool, never on fetch); mock in `tests/mock_qrypt.py`_ | S08 | S20 |
 | `qrypt_entropy.service.pool` (`service/pool.py`) | `take` (module-level; the real `Pool` class exists since S10) | S20 (S11 failure paths) | S20 |
 | `qrypt_entropy.service.pool` | `status` (module-level) | S35 | S35 |
 | `qrypt_entropy.service.pool` | `start` | S12 | S20 |

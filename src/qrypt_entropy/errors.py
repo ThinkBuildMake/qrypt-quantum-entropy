@@ -71,3 +71,7 @@ class AllotmentUsed(BudgetExhausted):
 
 class Unavailable(TemporarilyUnavailable):
     """Upstream 5xx, timeout or connection failure (DE-4, RL-2)."""
+
+
+class RateLimited(TemporarilyUnavailable):
+    """Upstream 429 persisted after the backoff rules (DE-3)."""
