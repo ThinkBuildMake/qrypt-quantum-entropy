@@ -73,6 +73,7 @@ Every setting `.env.example` lists, in the same order. Secret means: set it in t
 | `BACKUP_AGE_RECIPIENT` | no | age public key; or commit it as `backup/age-recipient.txt` |
 | `AGE_IDENTITY` | yes | path of the offline private key, restore drill only |
 | `OPENROUTER_API_KEY` | yes | the agent's OpenRouter token; never given to the MCP server |
+| `OPENROUTER_BASE_URL` | no | leave at the default; tests and `make demo-chat` point it at a local stub |
 | `AGENT_MODEL` | no | the `:free` model the agent calls |
 | `AGENT_LOG_FILE` | no | agent log path |
 | `AGENT_RESULTS_FILE` | no | where the agent writes its request count |

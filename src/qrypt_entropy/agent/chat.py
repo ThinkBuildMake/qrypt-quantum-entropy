@@ -25,6 +25,7 @@ from qrypt_entropy.logs import get_logger
 
 log = get_logger("agent")
 PLACEHOLDER = re.compile(r"\{\{v(\d+)\}\}")
+MIN_HIDDEN = 6  # values shorter than this (a random_int) are not swapped in what the user types
 MAX_ROUNDS = 6  # model requests allowed within one turn
 FREE_TIER_LIMIT = "20 requests a minute, 1000 a day"  # GC-3: OpenRouter :free models with the $10 credit
 SYSTEM_PROMPT = (
@@ -119,6 +120,8 @@ class Agent:
     def _hide(self, text: str) -> str:
         """Nothing the user types may carry an issued value to the provider: swap held values for their placeholders."""
         for key, value in sorted(self.values.items(), key=lambda kv: -len(kv[1])):
+            if len(value) < MIN_HIDDEN:
+                continue  # a short number ("42") is too ambiguous to swap: "user 42" must stay "user 42"
             text = re.sub(rf"(?<!\w){re.escape(value)}(?!\w)", "{{" + key + "}}", text)
         return text
 
@@ -130,10 +133,18 @@ class Agent:
             log.warning("unlisted_tool_refused", tool=call.name)
             return json.dumps({"error": unlisted})
         arguments = dict(call.arguments)
-        if call.name == "generate_token" and arguments.get("expiry_seconds") is None:
-            arguments["expiry_seconds"] = self.settings.token_expiry_default_seconds  # FR-2.1
+        if call.name == "generate_token" and arguments.get("owner") and arguments.get("expiry_seconds") is None:
+            arguments["expiry_seconds"] = (
+                self.settings.token_expiry_default_seconds
+            )  # FR-2.1 (the server refuses one without an owner)
         result = await self.tools.call(call.name, arguments)
-        log.info("agent_tool_call", tool=call.name, ok=result.error is None, code=result.code)
+        log.info(
+            "agent_tool_call",
+            tool=call.name,
+            ok=result.error is None,
+            code=result.code,
+            reference=result.metadata.get("reference"),  # `make trace REF=` takes it from the log (S32)
+        )
         if result.error is not None:
             if (sentence := CANNOT_ISSUE.get(result.code or "")) and sentence not in self._refusals:
                 self._refusals.append(sentence)

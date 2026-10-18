@@ -37,12 +37,13 @@ def capture_check(path: str) -> int:
     return 1 if problems else 0
 
 
-async def chat(first: str | None) -> int:
+async def chat(first: str | None, server_config: dict[str, str] | None = None) -> int:
+    """`server_config` is for a dev harness (scripts/chat_local.py); the agent itself passes the server nothing."""
     settings = AgentSettings()
     if not settings.mcp_client_key:
         print("MCP_CLIENT_KEY is not set, so the tools cannot be started.")
         return 1
-    async with McpTools(server_params(settings.mcp_client_key)) as tools:
+    async with McpTools(server_params(settings.mcp_client_key, server_config)) as tools:
         agent = Agent(OpenRouterModel(settings), tools, settings)
         try:
             lines = iter([first]) if first else iter(lambda: input("> ").strip(), "")

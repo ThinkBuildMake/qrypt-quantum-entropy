@@ -7,20 +7,21 @@ from openai import AsyncOpenAI
 from qrypt_entropy.agent.chat import ModelReply, ToolCall
 from qrypt_entropy.agent.settings import AgentSettings
 
-BASE_URL = "https://openrouter.ai/api/v1"
-
 
 class OpenRouterModel:
     def __init__(self, settings: AgentSettings, http_client=None):
         key = settings.openrouter_api_key
         self.name = settings.agent_model
         self._client = AsyncOpenAI(
-            base_url=BASE_URL,
+            base_url=settings.openrouter_base_url,
             api_key=key.get_secret_value() if key else "unset",
             max_retries=0,
             timeout=30,
             http_client=http_client,
         )
+
+    async def aclose(self) -> None:
+        await self._client.close()
 
     async def complete(self, messages: list[dict], tools: list[dict]) -> ModelReply:
         response = await self._client.chat.completions.create(model=self.name, messages=messages, tools=tools)

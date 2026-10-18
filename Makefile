@@ -28,10 +28,12 @@ GATE_P95_MS ?= 50
 export GATE_P95_MS
 
 # One .PHONY line per target: keeps parallel branches merge-safe (union merge).
+.PHONY: agent
 .PHONY: agent-capture-check
 .PHONY: agent-scripted
 .PHONY: agent-tools
 .PHONY: backup
+.PHONY: chat
 .PHONY: check-env
 .PHONY: check-imports
 .PHONY: check-language
@@ -41,6 +43,7 @@ export GATE_P95_MS
 .PHONY: db-reset
 .PHONY: db-up
 .PHONY: db-url
+.PHONY: demo-chat
 .PHONY: demo-guard
 .PHONY: demo-health
 .PHONY: demo-issue
@@ -160,6 +163,14 @@ run-http: ## serve the HTTP service locally on :8000
 
 trace: ## print the provenance of one issuance: make trace REF=<uuid>
 	@$(UV) python scripts/trace.py "$(REF)"
+
+chat: db-up migrate ## S32: the interactive agent with the REAL OpenRouter model against the local stack (docs/DEPLOY.md S32); needs OPENROUTER_API_KEY, MCP_CLIENT_KEY, KEY_HASH_SECRET, PEPPER, QRYPT_BASE_URL, QRYPT_API_KEY
+	$(UV) python scripts/chat_local.py
+
+agent: chat ## same as chat
+
+demo-chat: demo-guard db-reset ## S32 demo on a FRESH local database (resets it): real MCP server, mock Qrypt, scripted model over a local OpenAI-compatible stub
+	@mkdir -p logs && PYTHONPATH=. $(UV) python scripts/demo_chat.py
 
 agent-scripted: ## agent chat with the scripted model and a stub tool: make agent-scripted PROMPT='...'
 	@mkdir -p logs && $(UV) python -m qrypt_entropy.agent scripted "$(PROMPT)"

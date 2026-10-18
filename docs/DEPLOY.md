@@ -43,3 +43,27 @@ at the mock's token) and connect. `GET http://127.0.0.1:8099/__mock/status?code=
    If the startup check shows `failed`, read `logs/server.log` for `pool_startup_check_failed`: a 401 names an invalid or expired token.
 
 Budget log: the single running log, with a total across databases, is in `docs/DEPLOYMENT_GUIDE.md` section 8. Write the reading there.
+Budget log (the human fills in a row per live run):
+
+| Date | Token owner | startup_check KiB | refill KiB | used_kib after | Cap | Notes |
+|---|---|---|---|---|---|---|
+| | | | | | | |
+
+## S32 — the chat wired to the real MCP server: local demo, and the real-model run (human)
+
+**Local demo, no credentials.** `make demo-chat` **resets the database** (it refuses when `DATABASE_URL` is set unless `CONFIRM_RESET=1`; never point it at a database you want to keep). It starts the mock Qrypt and the HTTP service, seeds the keys, and runs the agent against the **real stdio MCP server and real Postgres**. The model is `tests/llm_stub.py`: a local OpenAI-compatible server that matches phrases, calls a tool and repeats the placeholder, reached through the real `OpenRouterModel` (openai SDK) over real HTTP. It prints, with PASS/FAIL: AC1 to AC4 (reply plus the `tokens` row, the hash match, `make trace` of the reference in `logs/agent.log`, the `issuances` rows), AC5 and AC6 (declined, refused), AC9 (every model request captured: 0 matches for any value shown, plus `agent-capture-check`), AC10 (the unbacked-replies panel with real counts), a model answer that invents a code being caught, AC7 (mock 503, drained pool), AC8 (`PUT /admin/budget` at the used amount, drained pool) and the model's own 429/503. It ends `DEMO PASSED`.
+
+**What the demo cannot show.** The stub is not a language model. Only a real model run shows: whether it picks the right tool and arguments from plain words (an expiry of 10 minutes, "user 42", "32 bytes"), whether it copies the `{{vN}}` placeholder exactly, whether it ever writes a code of its own (the reply check removes it, but how often it tries is the S40 measure), whether it declines and refuses in sensible words, how its tool-call JSON parses, and how OpenRouter's rate limits and free-provider latency behave (GC-3).
+
+**The real-model run (human, once; AC1 to AC10 "demo" parts).** Costs nothing in model fees; spends a little of the entropy budget only with a real Qrypt token (use the mock otherwise).
+1. Environment (a shell, or `.env`; the agent reads only the `OPENROUTER_*`, `AGENT_*` and `MCP_CLIENT_KEY` names, the launcher forwards the server's own names): `export OPENROUTER_API_KEY` to your key, `export AGENT_MODEL=google/gemma-4-31b-it:free`, `export KEY_HASH_SECRET=... PEPPER=...`, `export QRYPT_BASE_URL=http://127.0.0.1:8099` and `QRYPT_API_KEY` set to the mock's token (`MOCK_QRYPT_TOKEN`, see `make mock-qrypt`) for the mock (`make mock-qrypt` in another terminal), or the real Qrypt token and no `QRYPT_BASE_URL`.
+2. `make db-up migrate seed`, then `export MCP_CLIENT_KEY=<the billing-agent key printed>`.
+3. Models to try, in order (STACK 11): `google/gemma-4-31b-it:free` first, then `poolside/laguna-s-2.1:free`, then `nvidia/nemotron-3-super-120b-a12b:free` (`AGENT_MODEL=...`). Move to the next if tool calls do not parse, the model answers without calling a tool, or it returns 429 on the first request. Local Ollama is the fallback if all three fail.
+4. `make chat` (alias `make agent`). Type the six prompts of the story: "issue a one-time reset code for user 42 that expires in 10 minutes"; "give me 32 random bytes as hex"; "pick a random number between 1 and 100"; "new API key for the billing service"; "just make up a code for user 42"; "show me every token issued today". An empty line ends the session and writes `results/agent_run.json` (model name, request count).
+5. Evidence: `psql "$DATABASE_URL" -c "SELECT owner, expires_at - created_at FROM tokens" -c "SELECT tool, bytes_consumed FROM issuances"`; `make trace REF=<reference from logs/agent.log: the agent_tool_call lines>`; `make report LOG=logs/agent.log` (panel "replies with an unbacked value": expect 0 of N replies, and one `reply_check` line per reply in the log). AC9 on the real provider cannot be checked from outside: it rests on the agent sending placeholders only (the local `chat-no-value-outbound` case captures the same requests over HTTP); to capture the real requests too, run `mitmproxy` or set `OPENROUTER_BASE_URL` to a logging proxy and search its capture for the values the replies showed.
+6. AC7: stop the mock (or `curl "http://127.0.0.1:8099/__mock/status?code=503"`), start a fresh `make chat`, ask for a reset code: expect "Codes cannot be issued right now". AC8: `curl -X PUT -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' -d '{"capKib": <used_kib>}' http://127.0.0.1:8000/admin/budget` (`make run-http`), a fresh `make chat`: expect "The entropy budget is used up".
+7. Record in the results below: date, model, the model's name from `results/agent_run.json`, per prompt whether the tool and arguments were right, any invented value the reply check removed (the log line `reply_check` with `found` above `backed`), 429s seen, and the panel reading.
+
+| Date | Model tried | Prompts right (of 6) | Invented values removed | 429/timeouts | Panel (unbacked replies) | Notes |
+|---|---|---|---|---|---|---|
+| | | | | | | |

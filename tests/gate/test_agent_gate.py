@@ -39,6 +39,23 @@ async def test_ac4_agent_default_expiry():
     assert tools.calls == [("generate_token", {"kind": "otp_6", "owner": "user-42", "expiry_seconds": 600})]
 
 
+async def test_short_number_is_not_swapped_in_what_the_user_types():
+    """S32: after a random_int of 42 was shown, 'a code for user 42' still reaches the model as 'user 42'."""
+    steps = [call_step("random_int", min=1, max=100), ModelReply("It is {{v1}}"), ModelReply("ok")]
+    agent = Agent(ScriptedModel(steps), StubTools({"random_int": 42}))
+    await agent.turn("a number")
+    await agent.turn("issue a code for user 42")
+    assert agent.messages[-2]["content"] == "issue a code for user 42"
+
+
+async def test_default_expiry_only_with_an_owner():
+    """S32: the server refuses expiry_seconds without an owner, so an owner-less key gets none."""
+    tools = StubTools({"generate_token": "x"})
+    model = ScriptedModel([call_step("generate_token", kind="api_key"), ModelReply("Here: {{v1}}")])
+    await Agent(model, tools).turn("new API key")
+    assert tools.calls == [("generate_token", {"kind": "api_key"})]
+
+
 async def test_ac5_agent_request_count(tmp_path, monkeypatch):
     monkeypatch.setenv("AGENT_RESULTS_FILE", str(tmp_path / "results" / "agent_run.json"))
     steps = [
