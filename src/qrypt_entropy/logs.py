@@ -75,6 +75,11 @@ class _LibraryJsonFormatter(logging.Formatter):
         return scrub_line(json.dumps(fields))
 
 
+def _unraisable(hook_args) -> None:
+    """Shutdown noise ("Exception ignored in ...") would be plain text on stderr: one JSON line, error type only."""
+    get_logger("unraisable").error("unraisable_exception", error=type(hook_args.exc_value).__name__)
+
+
 def configure_logging(level: str = "INFO", log_file: str | None = None) -> None:
     """One JSON object per line on stderr (stdout carries the MCP protocol) and, if given, a file."""
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
@@ -84,6 +89,12 @@ def configure_logging(level: str = "INFO", log_file: str | None = None) -> None:
     for handler in handlers:
         handler.setFormatter(_LibraryJsonFormatter())
     logging.basicConfig(level=level, handlers=handlers, force=True)
+    sys.unraisablehook = _unraisable
+    for name in ("uvicorn", "uvicorn.error"):  # uvicorn installs plain-text handlers of its own: send it through ours
+        logging.getLogger(name).handlers.clear()
+        logging.getLogger(name).propagate = True
+    logging.getLogger("uvicorn.access").handlers.clear()  # the app logs its own `request` line (no client address)
+    logging.getLogger("uvicorn.access").propagate = False
     structlog.configure(
         processors=[
             structlog.processors.add_log_level,

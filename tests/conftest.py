@@ -1,6 +1,7 @@
 """Shared fixtures. The suite is offline: it needs only a Postgres reachable at DATABASE_URL (`make db-up`)."""
 
 import asyncio
+import json
 import os
 import sys
 import threading
@@ -11,6 +12,7 @@ import pytest
 from psycopg import sql
 from sqlalchemy.engine import make_url
 
+from qrypt_entropy import logs
 from qrypt_entropy.config import get_settings
 from qrypt_entropy.errors import AppError
 from qrypt_entropy.service import access, meter, pool
@@ -45,6 +47,34 @@ os.environ["QRYPT_API_KEY"] = SESSION_MOCK.token
 os.environ.pop("QRYPT_API_TOKEN", None)
 
 GATE_STATS: dict[str, str] = {}
+
+# S38 AC4: every log line any in-process test writes is parsed at the end of the session
+LOG_LINES: list[str] = []
+_format = logs._LibraryJsonFormatter.format
+
+
+def _recording_format(self, record):
+    line = _format(self, record)
+    LOG_LINES.append(line)
+    return line
+
+
+logs._LibraryJsonFormatter.format = _recording_format
+
+
+def log_line_problems() -> tuple[int, int, int, int]:
+    """(lines, lines that are not JSON, tool-call lines, tool-call lines without duration_ms)."""
+    not_json = tool_calls = missing = 0
+    for line in LOG_LINES:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            not_json += 1
+            continue
+        if str(event.get("event", "")).startswith("tool_call"):
+            tool_calls += 1
+            missing += "duration_ms" not in event
+    return len(LOG_LINES), not_json, tool_calls, missing
 
 
 def base_url() -> str:
@@ -158,7 +188,20 @@ def server_env() -> dict[str, str]:
     return {"PEPPER": "test-pepper", **{k: os.environ[k] for k in keys if k in os.environ}}
 
 
+def pytest_sessionfinish(session):
+    _, not_json, _, missing = log_line_problems()
+    if not_json or missing:
+        session.exitstatus = 1
+
+
 def pytest_terminal_summary(terminalreporter):
+    lines, not_json, tool_calls, missing = log_line_problems()
+    if lines:
+        terminalreporter.section("log lines")
+        terminalreporter.write_line(
+            f"log lines parsed as JSON: {lines - not_json} of {lines}; "
+            f"tool-call lines with duration_ms: {tool_calls - missing} of {tool_calls}"
+        )
     if GATE_STATS:
         terminalreporter.section("gate harness")
         for key, value in GATE_STATS.items():

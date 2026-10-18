@@ -8,6 +8,7 @@ Pooled bytes live in this process's memory only (CP-2): never written to a file,
 
 import asyncio
 import random
+import threading
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -23,6 +24,8 @@ log = get_logger("qrypt_entropy.pool")
 KIB = 1024
 REFILL_KIB = 64  # PF-3
 WAIT_S = 1.8  # RL-1, RL-3: how long a take waits for a refill; the error is out within 2 s
+_orphans = 0  # cancelled reservations not yet settled; shutdown waits for them (a late settle would reopen a DB pool)
+_orphans_settled = threading.Condition()
 _RESERVATIONS = ThreadPoolExecutor(max_workers=2, thread_name_prefix="reserve")  # blocking Meter calls, off the loop
 BACKOFF_BASE_S, BACKOFF_MAX_S = 0.5, 10.0  # between failed refills, doubled each time, with jitter (DE-3)
 
@@ -172,6 +175,7 @@ class Pool:
         try:
             return await asyncio.shield(asyncio.wrap_future(job))
         except asyncio.CancelledError:
+            _orphan_started()
             job.add_done_callback(_settle_orphan)
             raise
 
@@ -245,12 +249,29 @@ class Pool:
             failures = 0
 
 
+def _orphan_started() -> None:
+    global _orphans
+    with _orphans_settled:
+        _orphans += 1
+
+
+def _orphan_settled() -> None:
+    global _orphans
+    with _orphans_settled:
+        _orphans -= 1
+        _orphans_settled.notify_all()
+
+
 def _settle_orphan(job: Future) -> None:
     """Called when a cancelled refill's reservation finishes. Never blocks: the database write goes to a worker
     (the callback may run on the event loop if the job was already done)."""
     if job.cancelled() or job.exception() is not None:
+        _orphan_settled()
         return
-    _RESERVATIONS.submit(_mark_orphan_failed, job.result().batch_id)
+    try:
+        _RESERVATIONS.submit(_mark_orphan_failed, job.result().batch_id)
+    except RuntimeError:
+        _orphan_settled()
 
 
 def _mark_orphan_failed(batch_id: str) -> None:
@@ -258,6 +279,14 @@ def _mark_orphan_failed(batch_id: str) -> None:
         meter.mark_batch(batch_id, "failed")
     except Exception as exc:
         log.error("batch_mark_failed", error=type(exc).__name__)
+    finally:
+        _orphan_settled()
+
+
+def wait_for_orphans(timeout_s: float = 10.0) -> None:
+    """Block until every cancelled reservation has been settled, so no worker touches the database afterwards."""
+    with _orphans_settled:
+        _orphans_settled.wait_for(lambda: _orphans == 0, timeout_s)
 
 
 _pool: Pool | None = None
@@ -283,6 +312,7 @@ async def shutdown() -> None:
     use_pool(None)
     if pool is not None:
         await pool.stop()
+    await asyncio.to_thread(wait_for_orphans)
 
 
 async def take(n: int) -> Taken:

@@ -67,10 +67,14 @@ app = FastAPI(title="Qrypt entropy service", docs_url=None, redoc_url=None, life
 
 @app.middleware("http")
 async def _log_request(request: Request, call_next):
-    response = await call_next(request)
-    fields = {"client_id": request.state.client_id} if hasattr(request.state, "client_id") else {}
-    log.info("request", method=request.method, path=request.url.path, status=response.status_code, **fields)
-    return response
+    status = 500  # an unhandled exception still leaves its request line
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        return response
+    finally:
+        fields = {"client_id": request.state.client_id} if hasattr(request.state, "client_id") else {}
+        log.info("request", method=request.method, path=request.url.path, status=status, **fields)
 
 
 @app.exception_handler(AppError)

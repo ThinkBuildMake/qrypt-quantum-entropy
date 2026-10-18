@@ -52,6 +52,7 @@ export GATE_P95_MS
 .PHONY: guide-check
 .PHONY: help
 .PHONY: install
+.PHONY: leak-scan
 .PHONY: lint
 .PHONY: load
 .PHONY: load-concurrent
@@ -218,6 +219,11 @@ check-routes: db-up migrate ## S37 AC4: each hosted route called once with the r
 
 route-latency: db-up migrate ## S37 AC5: 100 requests per hosted route, p95 <= 1 s, figures in results/route_latency.json (ROUTE_LATENCY_FILE)
 	$(UV) pytest $(ROBUST) -k route_latency
+
+leak-scan: db-up migrate ## S38: full run with known markers, then search files, logs, responses, tables, dump, tree and git history
+	@echo "constraints checked: QRYPT_API_KEY is never committed (CP-1); pooled entropy is never on disk in plaintext (CP-2); no value, key or secret is logged (OB-2, OB-3)"
+	$(UV) pytest tests/gate/test_leak_scan_gate.py --no-cov -s -q -p no:logging --show-capture=no
+	$(MAKE) secret-scan
 
 check-imports:
 	$(UV) python tools/check_imports.py src

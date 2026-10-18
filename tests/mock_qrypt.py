@@ -51,6 +51,7 @@ class MockQrypt:
         ] = []  # consumed one per request: a status code, "drop" or "malformed" (200, bad body)
         self.delay_s = 0.0
         self.override: Callable[[int], int | None] | None = None  # request index -> status in place of a 200
+        self.entropy: Callable[[], bytes] | None = None  # one KiB per call, in place of the fixed pattern (S38)
         self._server: asyncio.Server | None = None
         self.port = port
 
@@ -112,8 +113,11 @@ class MockQrypt:
             if outcome == "malformed":
                 outcome, body = 200, {"random": ["not base64 !!"], "size": 1}
             elif outcome == 200:
-                block = base64.b64encode(bytes(range(256)) * 4).decode()
-                body = {"random": [block] * int(size), "size": int(size)}
+                if self.entropy:
+                    blocks = [base64.b64encode(self.entropy()).decode() for _ in range(int(size))]
+                else:
+                    blocks = [base64.b64encode(bytes(range(256)) * 4).decode()] * int(size)
+                body = {"random": blocks, "size": int(size)}
             self.log[index] = Logged(entry.at, entry.path, size, auth, int(outcome))
             data = json.dumps(body).encode()
             writer.write(
