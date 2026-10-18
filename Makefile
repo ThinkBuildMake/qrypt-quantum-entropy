@@ -44,6 +44,7 @@ export GATE_P95_MS
 .PHONY: db-up
 .PHONY: db-url
 .PHONY: demo-chat
+.PHONY: docs-check
 .PHONY: demo-guard
 .PHONY: demo-health
 .PHONY: demo-issue
@@ -245,6 +246,9 @@ check-env: ## .env.example lists every setting with placeholders only
 guide-check: ## docs/DEPLOYMENT_GUIDE.md covers the required steps and names only real targets, scripts and variables
 	$(UV) python -m tools.guide_check
 
+docs-check: ## S42: docs/technical has every section, matches the routes and tools, its diagrams parse, no secret
+	$(UV) python -m tools.docs_check
+
 check-language:
 	$(UV) python tools/check_language.py
 
@@ -257,6 +261,7 @@ gate: db-up migrate ## the regression gate: lint, tests + coverage + matrix + fu
 	$(MAKE) check-language
 	$(MAKE) check-env
 	$(MAKE) guide-check
+	$(MAKE) docs-check
 	$(MAKE) secret-scan
 	$(MAKE) test
 	@echo "GATE PASSED"
