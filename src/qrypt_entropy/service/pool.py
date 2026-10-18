@@ -169,7 +169,7 @@ class Pool:
         """Meter.reserve is a blocking database call: run it off the event loop so waiting takes are not stalled.
         If the caller is cancelled while it runs, the reservation still completes, and the worker thread settles
         that batch as failed (nobody will fetch for it)."""
-        job = _RESERVATIONS.submit(meter.reserve, kib, purpose, "qrypt")
+        job = _RESERVATIONS.submit(meter.reserve, kib, purpose, source.label())
         try:
             return await asyncio.shield(asyncio.wrap_future(job))
         except asyncio.CancelledError:

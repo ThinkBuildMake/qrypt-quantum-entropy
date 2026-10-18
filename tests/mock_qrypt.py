@@ -46,7 +46,9 @@ class MockQrypt:
         self.sticky: int | None = None  # every request answers this status while it is set
         self.clock = clock  # a test may scale time; the 10 s window and the log use it
         self.log: list[Logged] = []
-        self.faults: list[int | str] = []  # consumed one per request: a status code or "drop"
+        self.faults: list[
+            int | str
+        ] = []  # consumed one per request: a status code, "drop" or "malformed" (200, bad body)
         self.delay_s = 0.0
         self.override: Callable[[int], int | None] | None = None  # request index -> status in place of a 200
         self._server: asyncio.Server | None = None
@@ -107,7 +109,9 @@ class MockQrypt:
                 writer.transport.abort()
                 return
             body = {"error": REASONS.get(outcome, "error")}
-            if outcome == 200:
+            if outcome == "malformed":
+                outcome, body = 200, {"random": ["not base64 !!"], "size": 1}
+            elif outcome == 200:
                 block = base64.b64encode(bytes(range(256)) * 4).decode()
                 body = {"random": [block] * int(size), "size": int(size)}
             self.log[index] = Logged(entry.at, entry.path, size, auth, int(outcome))

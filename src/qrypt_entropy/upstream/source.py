@@ -223,3 +223,8 @@ async def fetch(size_kib: int) -> Fetched:
 
 def request_stats() -> dict:
     return _source().request_stats()
+
+
+def label() -> str:
+    """The active source's label, which the Meter records on each batch it reserves for it."""
+    return _source().label

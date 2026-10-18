@@ -31,6 +31,8 @@ export GATE_P95_MS
         agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
         load load-latency load-concurrent agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
+.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
+        fault-suite two-process-budget agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -141,6 +143,11 @@ load-concurrent: db-up ## S36 PF-2..PF-3, DE-1, SC-1, VR-1, VR-9: 100 callers fo
 	$(UV) python scripts/load_test.py concurrent
 
 load: load-latency load-concurrent ## both load runs
+fault-suite: db-up migrate ## S39: every Qrypt fault (403, 401, 429, 5xx, slow, dropped, malformed) fails closed through the real service
+	$(UV) pytest tests/gate/test_fault_suite_gate.py --no-cov -q
+
+two-process-budget: db-up migrate ## S39: two server processes share one cap; a 429 retry stays one batch
+	$(UV) pytest tests/gate/test_two_process_budget_gate.py --no-cov -q
 
 config-show: ## print the effective settings, secrets redacted
 	@$(UV) python scripts/config_show.py
