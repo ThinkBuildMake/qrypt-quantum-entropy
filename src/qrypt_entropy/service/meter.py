@@ -10,7 +10,6 @@ from qrypt_entropy.logs import get_logger
 from qrypt_entropy.models import Batch
 from qrypt_entropy.storage import db
 
-_STUB_CAP_KIB = 10240
 _MAX_BATCH_KIB = 512
 _MAX_CAP_KIB = 2**63 - 1  # the column is a bigint
 _log = get_logger("qrypt_entropy.meter")

@@ -1,6 +1,7 @@
 """HTTP transport (FastAPI). Thin: authenticate, validate, call the service, map errors.
 
-Routes authenticate with the real Access (S20); `/health` and the issuance trace still answer from stubs (S35, S33).
+Routes authenticate with the real Access (S20); usage, budget and client routes use the real Meter and Access (S34).
+`/health` and the issuance trace answer from stubs until S35 and S33.
 """
 
 import re
