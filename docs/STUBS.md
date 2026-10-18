@@ -21,7 +21,6 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.tokens` | `redeem` | S21 (S22 rate limit) | S33 |
 | `qrypt_entropy.service.issuance` | `call_stats` | S28 | S35 |
 | `qrypt_entropy.service.status` (`service/status.py`) | `get_health` | S29 | S35 |
-| `qrypt_entropy.service.status` | `get_metrics` | S30 | S35 |
 | `qrypt_entropy.service.status` | `report_once` | S28 | S35 |
 | `qrypt_entropy.agent.chat` (`agent/chat.py`) | `chat_turn` | S25 (S26, S27) | S32 |
 
@@ -72,3 +71,5 @@ S15 (done): `Issuance.generate_token` is real: `otp_6` (3-byte draws, rejection 
 batch rows and `Tokens.store_token` commit in one transaction (a failure anywhere returns `temporarily_unavailable` and
 no value); without one nothing is stored. `expiry_seconds` defaults to 600 and is capped at `TOKEN_EXPIRY_MAX_SECONDS`.
 Needs `TOKEN_PEPPER` (or `PEPPER`) when an owner is given. Still on the stub `pool.take` until S20.
+
+S30 (done): `status.get_metrics` is real and `GET /metrics` (admin key) answers from the most recently reporting `server_status` row plus `budget.used_kib`. Series: `qrypt_pool_level_bytes`, `qrypt_upstream_requests_last_10s`, `qrypt_process_start_time_seconds` (epoch seconds from the snapshot's `startedAt`, a number or an ISO-8601 string), `qrypt_calls_total{tool}`, `qrypt_errors_total{code}`, `qrypt_tool_call_duration_ms{quantile="0.5|0.95|0.99"}` (live series); `qrypt_budget_used_kib` and `qrypt_report_age_seconds` (always; NaN when no row exists). A row older than 15 s (database clock) drops the live series. S28 must write `MetricsSnapshot` keys exactly as in ARCHITECTURE. Gate cases in `tests/gate/test_metrics_gate.py` (`metrics-parse`, `metrics-values`).

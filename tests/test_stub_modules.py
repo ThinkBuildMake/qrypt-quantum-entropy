@@ -5,7 +5,7 @@ from mcp.client import Client
 
 from qrypt_entropy.errors import BudgetExhausted, InvalidArgument, TemporarilyUnavailable
 from qrypt_entropy.models import Principal
-from qrypt_entropy.service import issuance, pool, status
+from qrypt_entropy.service import issuance, pool
 from qrypt_entropy.service.access import STUB_CLIENT_KEY, authenticate, create_credential, hash_key
 from qrypt_entropy.transport.mcp_server import build_server
 from qrypt_entropy.upstream import source
@@ -30,7 +30,6 @@ async def test_pool_and_source_stubs_keep_their_contract_bounds():
 
 
 def test_status_and_token_stubs():
-    assert "qrypt_pool_level_bytes" in status.get_metrics()
     assert len(hash_key("k")) == 32
     assert create_credential("client", f"x-{uuid.uuid4().hex}")[0].role == "client"
     assert authenticate(STUB_CLIENT_KEY, {"client"}).name == "stub-client"
