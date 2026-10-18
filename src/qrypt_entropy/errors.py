@@ -59,6 +59,12 @@ class TemporarilyUnavailable(AppError):
     code = "temporarily_unavailable"
 
 
+class DatabaseUnavailable(AppError):
+    """The database cannot be reached (503). Raised where the caller is told so by name (S29 /health)."""
+
+    code = "database_unavailable"
+
+
 class Misconfigured(AppError):
     """Upstream 401: the Qrypt token is invalid or expired (DE-5)."""
 

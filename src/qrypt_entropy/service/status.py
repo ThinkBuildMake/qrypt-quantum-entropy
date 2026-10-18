@@ -1,6 +1,6 @@
 """Status: what the hosted service can say about the MCP server. Owns `server_status`.
 
-S01 STUB: synthetic health, no database read. Real: S28 (report job), S29 (/health). S30 (/metrics) is real.
+S01 STUB: `report_once` (S28 writes `server_status`). `get_health` (S29) and `get_metrics` (S30) are real.
 """
 
 from datetime import datetime
@@ -8,21 +8,33 @@ from datetime import datetime
 from prometheus_client import CollectorRegistry, generate_latest
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 
+from qrypt_entropy.errors import DatabaseUnavailable, TemporarilyUnavailable
 from qrypt_entropy.storage import db
 from qrypt_entropy.stubs import stub
 
+STALE_AFTER_SECONDS = 15  # a report older than this reads as "not reporting": three missed 5 s reports (OB-1)
+NOT_REPORTING = {"reporting": False, "reportAgeSeconds": None, "pool": None, "upstream": None}
 
-@stub("S29")
+
 def get_health() -> dict:
+    """The most recent report as health; older than 15 s or absent reads as not reporting (database clock)."""
+    try:
+        with db.connection() as conn:
+            row = conn.execute(
+                "SELECT extract(epoch FROM now() - reported_at), pool_level_bytes, low_mark_bytes, high_mark_bytes, "
+                "upstream_status, last_success_at FROM server_status ORDER BY reported_at DESC LIMIT 1"
+            ).fetchone()
+    except TemporarilyUnavailable as err:
+        raise DatabaseUnavailable("the database is unavailable") from err
+    if row is None or row[0] > STALE_AFTER_SECONDS:
+        return dict(NOT_REPORTING)
+    age, level, low, high, upstream_status, last_success = row
     return {
         "reporting": True,
-        "reportAgeSeconds": 1.0,
-        "pool": {"levelBytes": 65536, "lowMarkBytes": 32768, "highMarkBytes": 131072},
-        "upstream": {"status": "ok", "lastSuccessAt": None},
+        "reportAgeSeconds": max(0.0, round(float(age), 1)),
+        "pool": {"levelBytes": level, "lowMarkBytes": low, "highMarkBytes": high},
+        "upstream": {"status": upstream_status, "lastSuccessAt": last_success.isoformat() if last_success else None},
     }
-
-
-STALE_AFTER_SECONDS = 15  # a report older than this reads as "not reporting" (OB-1)
 
 
 def _epoch(started_at) -> float | None:

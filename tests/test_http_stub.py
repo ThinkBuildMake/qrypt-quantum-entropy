@@ -15,9 +15,8 @@ def http():
 
 
 def test_ac3_health_has_contract_fields(http):
-    body = http.get("/health").json()
+    body = http.get("/health").json()  # shapes with data are covered by tests/test_health.py (S29)
     assert set(body) == {"reporting", "reportAgeSeconds", "pool", "upstream"}
-    assert set(body["pool"]) == {"levelBytes", "lowMarkBytes", "highMarkBytes"}
 
 
 def test_ac5_usage_and_issuance_shapes(http):
