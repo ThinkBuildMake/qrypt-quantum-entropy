@@ -38,6 +38,7 @@ export GATE_P95_MS
 .PHONY: check-imports
 .PHONY: check-language
 .PHONY: check-routes
+.PHONY: clean-clone-check
 .PHONY: config-show
 .PHONY: db-down
 .PHONY: db-reset
@@ -59,6 +60,7 @@ export GATE_P95_MS
 .PHONY: gate
 .PHONY: guide-check
 .PHONY: help
+.PHONY: inspector-config
 .PHONY: install
 .PHONY: leak-scan
 .PHONY: lint
@@ -69,11 +71,13 @@ export GATE_P95_MS
 .PHONY: mcp-list
 .PHONY: migrate
 .PHONY: mock-qrypt
+.PHONY: readme-check
 .PHONY: report
 .PHONY: restore-drill
 .PHONY: route-latency
 .PHONY: run-http
 .PHONY: sample-metrics
+.PHONY: snippet-check
 .PHONY: secret-scan
 .PHONY: seed
 .PHONY: seed-list-names
@@ -83,7 +87,7 @@ export GATE_P95_MS
 .PHONY: trace
 .PHONY: two-process-budget
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue demo-operate mcp-list mcp-call report sample-metrics test lint gate \
-        agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env guide-check
+        agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env guide-check readme-check snippet-check inspector-config clean-clone-check
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -265,6 +269,17 @@ guide-check: ## docs/DEPLOYMENT_GUIDE.md covers the required steps and names onl
 
 docs-check: ## S42: docs/technical has every section, matches the routes and tools, its diagrams parse, no secret
 	$(UV) python -m tools.docs_check
+readme-check: ## README first line <= 120 characters, only real commands, scripts and variables, snippet equals docs/mcp-client.json
+	$(UV) python -m tools.readme_check
+
+snippet-check: ## launch an MCP client from the README snippet (throwaway database, mock Qrypt) and list the three tools
+	$(UV) python scripts/snippet.py check
+
+inspector-config: ## write the README snippet with the values in your shell to logs/inspector.json (needs the README exports)
+	$(UV) python scripts/snippet.py fill logs/inspector.json
+
+clean-clone-check: ## DP-1: clone HEAD, follow only the README (quickstart, then Inspector), print the elapsed times (SKIP_GATE=1 skips the gate)
+	$(UV) python scripts/clean_clone_check.py
 
 check-language:
 	$(UV) python tools/check_language.py
@@ -279,6 +294,8 @@ gate: db-up migrate ## the regression gate: lint, tests + coverage + matrix + fu
 	$(MAKE) check-env
 	$(MAKE) guide-check
 	$(MAKE) docs-check
+	$(MAKE) readme-check
+	$(MAKE) snippet-check
 	$(MAKE) secret-scan
 	$(MAKE) test
 	@echo "GATE PASSED"

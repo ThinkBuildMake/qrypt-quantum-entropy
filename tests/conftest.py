@@ -24,6 +24,8 @@ from tests.test_migrations import migrate
 
 os.environ.setdefault("KEY_HASH_SECRET", "test-only-key-hash-secret")  # not a real secret
 os.environ.setdefault("TOKEN_PEPPER", "test-only-token-pepper")  # not a real secret
+os.environ.pop("PEPPER", None)  # a shell that ran the README quick-start exports these; tests set their own
+os.environ.pop("MCP_CLIENT_KEY", None)
 
 
 def _start_session_mock() -> MockQrypt:
