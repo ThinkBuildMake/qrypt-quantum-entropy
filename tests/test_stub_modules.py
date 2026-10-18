@@ -57,5 +57,5 @@ async def test_invalid_tool_input_is_invalid_argument(tool, args):
 async def test_issuance_stubs_cover_all_encodings_and_kinds():
     stub_client = authenticate(STUB_CLIENT_KEY, {"client"})  # a principal the seeded database knows
     assert (await issuance.get_random_bytes(stub_client, 3, "base64")).value == "AAEC"
-    assert (await issuance.generate_token(P, "uuid_v4", "o", 60)).value.endswith("0000")
+    assert len((await issuance.generate_token(stub_client, "api_key")).value) == 64
     assert issuance.call_stats()["callsByTool"]["get_random_bytes"] >= 1

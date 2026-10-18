@@ -26,7 +26,7 @@ AC2. A 6-digit draw above the unbiased limit is rejected and counted
    Given a stub pool serving FF FF FF (16,777,215, above the limit of 16,000,000) and then 00 00 07
    When generate_token is called with kind otp_6
    Then the value is 000007 and bytes_consumed is 6
-   Evidence: gate case `token-otp-rejection-counted`; the chi-square test of S14 runs on the same sampler
+   Evidence: gate case `token-otp-rejection-counted`; gate case `token-otp-unbiased` (chi-square on this sampler, with a modulo mutant that must fail)
 AC3. Every kind has its format
    Given a mocked uniform source
    When generate_token is called 10,000 times each for otp_6, uuid_v4 and api_key

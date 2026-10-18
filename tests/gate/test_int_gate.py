@@ -11,7 +11,7 @@ import uuid
 import pytest
 
 from qrypt_entropy.errors import InvalidArgument, TemporarilyUnavailable
-from qrypt_entropy.models import BatchSlice, Taken
+from qrypt_entropy.models import BatchSlice, Taken, ToolMetadata
 from qrypt_entropy.service import issuance, pool
 from tests.gate.test_bytes_gate import CLIENT, PRINCIPAL, bdb, rows, seed_batch, stub_pool  # noqa: F401
 
@@ -73,7 +73,10 @@ async def test_int_wide(bdb, random_pool, monkeypatch):  # noqa: F811
     monkeypatch.setattr(
         issuance,
         "_audit",
-        lambda principal, tool, n, slices: audited.append(n) or issuance._metadata(n, slices[0].batch_id),
+        lambda principal, tool, n, slices: (
+            audited.append(n)
+            or ToolMetadata(source="qrypt", batch_id="b", batch_ids=["b"], bytes_consumed=n, reference="r")
+        ),
     )
     results = [(await issuance.random_int(PRINCIPAL, -SAFE, SAFE)).value for _ in range(10_000)]
     assert all(type(r) is int and -SAFE <= r <= SAFE for r in results)

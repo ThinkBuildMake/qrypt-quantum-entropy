@@ -1,6 +1,6 @@
 """Issuance: the tools and the audit record. Owns `issuances`, `issuance_batches`.
 
-get_random_bytes and the audit record are real (S13), and random_int (S14). Still S01 stubs: S15 (generate_token),
+get_random_bytes, random_int (S14) and generate_token (S15) are real, with the audit record. Still S01 stubs:
 S23 (getIssuance); wired to the transports by S20 and S33.
 """
 
@@ -18,30 +18,25 @@ from qrypt_entropy.config import get_settings
 from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable
 from qrypt_entropy.logs import get_logger
 from qrypt_entropy.models import BatchSlice, IssuedValue, Principal, ToolMetadata
-from qrypt_entropy.service import pool
+from qrypt_entropy.service import pool, tokens
 from qrypt_entropy.storage.db import connection
 from qrypt_entropy.stubs import stub
 
 log = get_logger("qrypt_entropy.issuance")
 SAFE_INT = 2**53 - 1
-KINDS = {"api_key": "stub-api-key-0000", "otp_6": "000000", "uuid_v4": "00000000-0000-4000-8000-000000000000"}
+KINDS = ("api_key", "otp_6", "uuid_v4")
+OTP_LIMIT = 16_000_000  # the largest multiple of 10**6 that fits in 3 bytes (2**24 = 16,777,216)
 _calls: dict[str, int] = {}
 _errors: dict[str, int] = {}
 _durations_ms: deque[float] = deque(maxlen=10_000)
-
-
-def _metadata(n: int, batch_id: str) -> ToolMetadata:
-    return ToolMetadata(
-        source="stub", batch_id=batch_id, batch_ids=[batch_id], bytes_consumed=n, reference=str(uuid.uuid4())
-    )
 
 
 def _count(tool: str) -> None:
     _calls[tool] = _calls.get(tool, 0) + 1
 
 
-def _audit(principal: Principal, tool: str, n: int, slices: list[BatchSlice]) -> ToolMetadata:
-    """One transaction: the issuance row and its batch rows. Commits before the caller sees any value (VR-9, RL-6)."""
+def _audit(principal: Principal, tool: str, n: int, slices: list[BatchSlice], inside=None) -> ToolMetadata:
+    """One transaction: issuance row, batch rows and `inside(conn, reference)`; commits before any value returns."""
     reference = uuid.uuid4()
     try:
         with connection() as conn:
@@ -53,6 +48,8 @@ def _audit(principal: Principal, tool: str, n: int, slices: list[BatchSlice]) ->
                 "INSERT INTO issuance_batches (issuance_id, batch_id, byte_offset, byte_count) VALUES (%s, %s, %s, %s)",
                 [(reference, s.batch_id, s.byte_offset, s.byte_count) for s in slices],
             )
+            if inside:
+                inside(conn, str(reference))
             source = conn.execute("SELECT source FROM batches WHERE id = %s", (slices[0].batch_id,)).fetchone()[0]
     except psycopg.Error as exc:
         log.error("audit_write_failed", tool=tool, error=type(exc).__name__)
@@ -93,6 +90,18 @@ async def get_random_bytes(principal: Principal, length: int, encoding: str) -> 
     return IssuedValue(value=data.hex() if encoding == "hex" else base64.b64encode(data).decode(), metadata=metadata)
 
 
+def _drawer(slices: list[BatchSlice]) -> Callable[[int], Awaitable[bytes]]:
+    """A draw function that takes from the pool and records each slice: every byte drawn, kept or rejected, is
+    consumed (CT-1)."""
+
+    async def draw(n: int) -> bytes:
+        taken = await pool.take(n)
+        slices.extend(taken.slices)
+        return taken.bytes
+
+    return draw
+
+
 async def sample_int(span: int, draw: Callable[[int], Awaitable[bytes]]) -> int:
     """A uniform integer in [0, span) by rejection sampling (VR-2): draw just enough bytes, mask them to the bits the
     span needs, and draw again when the result falls outside it. Never a modulo. At least one byte is always drawn."""
@@ -112,13 +121,7 @@ async def random_int(principal: Principal, min: int, max: int) -> IssuedValue:  
         if min > max or abs(min) > SAFE_INT or abs(max) > SAFE_INT:
             raise InvalidArgument("min must not exceed max, and both must be within 2^53 - 1")
         slices: list[BatchSlice] = []
-
-        async def draw(n: int) -> bytes:  # every byte drawn counts as consumed, kept or rejected (CT-1)
-            taken = await pool.take(n)
-            slices.extend(taken.slices)
-            return taken.bytes
-
-        value = min + await sample_int(max - min + 1, draw)
+        value = min + await sample_int(max - min + 1, _drawer(slices))
         metadata = await asyncio.to_thread(_audit, principal, tool, sum(s.byte_count for s in slices), slices)
     except AppError as err:  # a failed later draw discards the bytes already drawn and writes no row
         record_error(err.code, (time.perf_counter() - started) * 1000)
@@ -128,22 +131,67 @@ async def random_int(principal: Principal, min: int, max: int) -> IssuedValue:  
     return IssuedValue(value=value, metadata=metadata)
 
 
-@stub("S15")
+async def _draw_otp(draw) -> str:
+    """Six digits by rejection sampling over 3-byte draws (VR-2); every rejected draw stays counted."""
+    while True:
+        number = int.from_bytes(await draw(3), "big")
+        if number < OTP_LIMIT:
+            return f"{number % 1_000_000:06d}"
+
+
 async def generate_token(
     principal: Principal, kind: str, owner: str | None = None, expiry_seconds: int | None = None
 ) -> IssuedValue:
+    started = time.perf_counter()
+    tool = "generate_token"
     settings = get_settings()
-    if kind not in KINDS:
-        raise InvalidArgument("kind must be api_key, otp_6 or uuid_v4")
-    if owner is None and expiry_seconds is not None:
-        raise InvalidArgument("expiry_seconds needs an owner")
-    if owner is not None and len(owner) > 256:
-        raise InvalidArgument("owner must be at most 256 characters")
-    if expiry_seconds is not None and not 1 <= expiry_seconds <= settings.token_expiry_max_seconds:
-        raise InvalidArgument("expiry_seconds out of range")
-    taken = await pool.take(32)
-    _count("generate_token")
-    return IssuedValue(value=KINDS[kind], metadata=_metadata(32, taken.slices[0].batch_id))
+    slices: list[BatchSlice] = []
+    try:
+        if kind not in KINDS:
+            raise InvalidArgument("kind must be api_key, otp_6 or uuid_v4")
+        if owner is None and expiry_seconds is not None:
+            raise InvalidArgument("expiry_seconds needs an owner")
+        if owner is not None and len(owner) > tokens.MAX_OWNER_LENGTH:
+            raise InvalidArgument(f"owner must be at most {tokens.MAX_OWNER_LENGTH} characters")
+        if expiry_seconds is not None and not 1 <= expiry_seconds <= settings.token_expiry_max_seconds:
+            raise InvalidArgument(f"expiry_seconds must be from 1 to {settings.token_expiry_max_seconds}")
+        draw = _drawer(slices)
+        if kind == "otp_6":
+            value = await _draw_otp(draw)
+        elif kind == "api_key":
+            value = (await draw(32)).hex()
+        else:
+            raw = bytearray(await draw(16))
+            raw[6] = raw[6] & 0x0F | 0x40
+            raw[8] = raw[8] & 0x3F | 0x80
+            value = str(uuid.UUID(bytes=bytes(raw)))
+        expiry = expiry_seconds or settings.token_expiry_default_seconds
+        metadata = await asyncio.to_thread(
+            _audit, principal, tool, sum(s.byte_count for s in slices), slices, _store(owner, kind, value, expiry)
+        )
+    except AppError as err:
+        record_error(err.code, (time.perf_counter() - started) * 1000)
+        raise
+    _count(tool)
+    _durations_ms.append((time.perf_counter() - started) * 1000)
+    return IssuedValue(value=value, metadata=metadata)
+
+
+def _store(owner: str | None, kind: str, value: str, expiry: int):
+    """The token-store step of a redeemable token's transaction, or none; any failure fails the whole issuance."""
+    if owner is None:
+        return None
+
+    def inside(conn, reference: str) -> None:
+        try:
+            tokens.store_token(conn, reference, owner, kind, value, expiry)
+        except AppError:
+            raise
+        except Exception as exc:
+            log.error("token_store_failed", error=type(exc).__name__)
+            raise TemporarilyUnavailable("the token could not be stored, so no value was issued") from exc
+
+    return inside
 
 
 @stub("S23")
