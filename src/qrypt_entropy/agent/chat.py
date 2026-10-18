@@ -19,6 +19,7 @@ from qrypt_entropy.agent.guard import (
     model_failure_message,
     unlisted_tool_message,
 )
+from qrypt_entropy.agent.reply_check import check_reply
 from qrypt_entropy.agent.settings import AgentSettings
 from qrypt_entropy.logs import get_logger
 
@@ -74,6 +75,7 @@ class Agent:
         self.settings = settings or AgentSettings()
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.values: dict[str, str] = {}  # placeholder number -> issued value; memory only
+        self.provenance: set[str] = set()  # ids tools returned as metadata; the reply may quote them
         self.model_requests = 0
         self._issued: list[str] = []  # placeholder keys issued in the current turn
         self._refusals: list[str] = []  # plain sentences for this turn's cannot-issue tool errors
@@ -112,7 +114,7 @@ class Agent:
         if self._refusals and not self._issued:
             log_fixed_reply("cannot_issue")
             return " ".join(self._refusals)
-        return "\n".join([self._fill(text), *self._refusals])
+        return "\n".join([check_reply(self._fill(text), self.values, self.provenance), *self._refusals])
 
     def _hide(self, text: str) -> str:
         """Nothing the user types may carry an issued value to the provider: swap held values for their placeholders."""
@@ -136,6 +138,7 @@ class Agent:
             if (sentence := CANNOT_ISSUE.get(result.code or "")) and sentence not in self._refusals:
                 self._refusals.append(sentence)
             return json.dumps({"error": result.error})
+        self.provenance.update(_ids(result.metadata))
         key = f"v{len(self.values) + 1}"
         self._issued.append(key)
         self.values[key] = str(result.value)
@@ -156,6 +159,11 @@ class Agent:
             + "\n"
         )
         log.info("run_finished", model_requests=self.model_requests)
+
+
+def _ids(metadata: dict) -> list[str]:
+    ids = [metadata.get("batch_id"), metadata.get("reference"), *(metadata.get("batch_ids") or [])]
+    return [i for i in ids if isinstance(i, str)]
 
 
 def _assistant_message(reply: ModelReply) -> dict:
