@@ -87,6 +87,11 @@ def url_for(dbname: str) -> str:
     return make_url(base_url()).set(database=dbname).render_as_string(hide_password=False)
 
 
+def role_url_for(url: str, role: str, password: str) -> str:
+    """`url` with its user and password replaced by a database role's."""
+    return make_url(url).set(username=role, password=password).render_as_string(hide_password=False)
+
+
 def seed_issuance(ref: str) -> None:
     """An issuance row (by the test client, drawn from a received batch) for tests that trace a fixed reference."""
     batch = "00000000-0000-4000-8000-0000000000b1"

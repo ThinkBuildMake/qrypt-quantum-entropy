@@ -25,7 +25,7 @@ contains a value, a key or a hash. A tool error is delivered as an MCP tool erro
 
 ### Authentication
 
-HTTP: `Authorization: Bearer <key>`. The roles are `admin` and `client`. `/health` and `/openapi.json` take no key;
+HTTP: `Authorization: Bearer <key>`. The roles are `admin` and `client`. `/health` takes no key; the schema and interactive documentation routes (`/openapi.json`, `/docs`, `/redoc`) are switched off.
 `/verify` takes a client or admin key; every other route takes an admin key. MCP: the client key is in the server's
 environment (`MCP_CLIENT_KEY`) and is checked at start and on every call; only the `client` role may call the tools, so an
 admin key is `forbidden` there.
@@ -154,10 +154,3 @@ name is taken. The key is not recoverable afterwards.
 Admin key. Returns `{"client": {"id": "...", "name": "...", "role": "client", "status": "revoked"}}`. Revoking again keeps
 the first revocation time. 404 `not_found` for a malformed id, an unknown id or an admin credential. A revoked key is
 refused on its next call (MCP server and HTTP).
-
-### Route: GET /openapi.json
-
-No key. **[as built, not in the design]** FastAPI's schema route is left on (`docs_url` and `redoc_url` are disabled,
-`openapi_url` is not). It lists the routes and request shapes above and returns no entropy-derived value, so GC-7 holds.
-It is documented here because it is registered; turning it off is one argument (`openapi_url=None`) if a reviewer
-prefers.

@@ -40,7 +40,7 @@ plain HTTP on localhost.
 A daily GitHub Actions job dumps the database as the read-only `backup` role and encrypts it with `age` in the same
 pipe; no plain dump touches a disk. The private key stays offline. The dump holds client-key HMACs, token HMACs and
 audit rows, never the pepper, a key or a value. `[unverified]`: the workflow and a real key pair have never run; the local
-`make restore-drill` ran against Postgres 16 (`docs/BACKUP.md`, `docs/DEVIATIONS.md` 13).
+`make restore-drill` ran against Postgres 16 (`docs/BACKUP.md`, `docs/DEVIATIONS.md` 14).
 
 ### Data handling summary
 
@@ -110,6 +110,7 @@ against the cap by hand (`docs/DEPLOYMENT_GUIDE.md`).
 - The MCP server's database role runs wherever the caller runs the server. Whoever controls that process can insert
   audit rows for any client, raise `used_kib`, and write token hashes. The database stops it reading or changing tokens
   and audit rows already written. This is the trust boundary of the issuing role (08).
-- `render.yaml` gives the hosted service the database owner's connection string. The `http_service` role limits the
-  hosted service only after the operator swaps in that role's connection string `[unverified]`.
+- The hosted service and the MCP server connect as their own roles (`HTTP_SERVICE_URL`, `MCP_SERVER_URL`); a `prod`
+  process refuses to start without its string. The owner's string (`MIGRATOR_URL`) is still in the Render service's
+  environment because the free plan migrates at start, but the service process does not read it `[unverified on Render]`.
 - Failed-redemption limits are per owner, not per caller (08).

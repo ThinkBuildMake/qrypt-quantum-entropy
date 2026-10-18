@@ -18,7 +18,12 @@ services:
         sync: false
       - key: KEY_HASH_SECRET
         sync: false
-      - key: DATABASE_URL
+      # Least privilege: the service connects as the http_service role (HTTP_SERVICE_URL, set in the dashboard
+      # once `scripts/set_role_passwords.py` has given the role a password). The database owner's string is
+      # MIGRATOR_URL, read only by `alembic upgrade head`; the service has no DATABASE_URL.
+      - key: HTTP_SERVICE_URL
+        sync: false
+      - key: MIGRATOR_URL
         fromDatabase:
           name: qrypt-db
           property: connectionString

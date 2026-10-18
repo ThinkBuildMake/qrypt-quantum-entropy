@@ -132,6 +132,7 @@ append-only for every role the application and the backup job run as. `tests/exp
 
 **[as built]** `migrator` is created but does not own the tables: the role that runs the migration owns them (the
 superuser locally, the database owner on Render). The grants and triggers behave the same (`docs/DEVIATIONS.md` 9). The
-guards bind the application roles; a database owner or superuser can bypass them. `render.yaml` wires `DATABASE_URL` to
-the database's own connection string, so the hosted service uses the least-privilege `http_service` role only if the
-operator replaces `DATABASE_URL` with that role's string after `scripts/set_role_passwords.py` `[unverified]`; see 06.
+guards bind the application roles; a database owner or superuser can bypass them. `render.yaml` gives the owner's
+connection string to the migration only (`MIGRATOR_URL`); the hosted service reads `HTTP_SERVICE_URL`, the
+`http_service` role's string, which the operator sets after `scripts/set_role_passwords.py`, and a `prod` service refuses
+to start without it. The MCP server does the same with `MCP_SERVER_URL` `[unverified on Render]`; see 06.

@@ -120,8 +120,13 @@ class Run:
             check=True,
             capture_output=True,
         )
+        role_password = "load-" + secrets.token_hex(8)  # the server runs as its own role, as deployed
         with psycopg.connect(self.url) as conn:
             conn.execute("UPDATE budget SET cap_kib = %s WHERE id = 1", (TEST_CAP_KIB,))
+            conn.execute(sql.SQL("ALTER ROLE mcp_server PASSWORD {}").format(sql.Literal(role_password)))
+        self.env["MCP_SERVER_URL"] = (
+            make_url(self.url).set(username="mcp_server", password=role_password).render_as_string(hide_password=False)
+        )
         seeded = subprocess.run(
             [sys.executable, "scripts/seed.py"], env=self.env, cwd=ROOT, check=True, capture_output=True, text=True
         ).stdout
@@ -132,6 +137,7 @@ class Run:
         keep = {
             "PATH",
             "DATABASE_URL",
+            "MCP_SERVER_URL",
             "KEY_HASH_SECRET",
             "PEPPER",
             "QRYPT_BASE_URL",

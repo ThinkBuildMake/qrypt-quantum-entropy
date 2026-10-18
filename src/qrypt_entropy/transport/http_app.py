@@ -59,10 +59,11 @@ class ClientBody(BaseModel):
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     get_settings().require(HTTP_SERVICE_SECRETS)  # a missing secret stops the start, naming the variable
+    get_settings().bind_role("http_service")  # the hosted service never runs on the owner connection string
     yield
 
 
-app = FastAPI(title="Qrypt entropy service", docs_url=None, redoc_url=None, lifespan=_lifespan)
+app = FastAPI(title="Qrypt entropy service", openapi_url=None, docs_url=None, redoc_url=None, lifespan=_lifespan)
 
 
 @app.middleware("http")

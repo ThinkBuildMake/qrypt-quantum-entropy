@@ -1,4 +1,4 @@
-"""Alembic environment: raw-SQL migrations against DATABASE_URL."""
+"""Alembic environment: raw-SQL migrations as the owner (MIGRATOR_URL, else DATABASE_URL)."""
 
 import os
 
@@ -7,9 +7,9 @@ from sqlalchemy import create_engine
 
 
 def _url() -> str:
-    url = os.environ.get("DATABASE_URL")
+    url = os.environ.get("MIGRATOR_URL") or os.environ.get("DATABASE_URL")
     if not url:
-        raise SystemExit("DATABASE_URL is not set")
+        raise SystemExit("MIGRATOR_URL or DATABASE_URL is not set")
     return url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 

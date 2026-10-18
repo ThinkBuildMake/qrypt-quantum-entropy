@@ -5,7 +5,7 @@
 Nothing here has been run: S01 was built without a Render account (see `docs/DEVIATIONS.md`).
 
 1. In Render choose New, Blueprint, point it at this repository: `render.yaml` creates a free web service
-   (`qrypt-entropy`) and a free Postgres 18 (`qrypt-db`) and wires `DATABASE_URL`. Do not create the production database
+   (`qrypt-entropy`) and a free Postgres 18 (`qrypt-db`) and wires the owner string as `MIGRATOR_URL` (the service connects as `http_service` through `HTTP_SERVICE_URL`, `docs/DEPLOYMENT_GUIDE.md` step 4c). Do not create the production database
    before 2026-10-20 (`STACK.md` 19); this one is the spike/demo database.
 2. The start command runs `alembic upgrade head` (safe to run twice), then uvicorn.
 3. Checks (AC3, AC4, AC5, AC6, AC7). `RENDER_URL` is the host name without scheme; `CLIENT_KEY` and `ADMIN_KEY` are the keys `make seed` printed against that database (the stub keys no longer exist):

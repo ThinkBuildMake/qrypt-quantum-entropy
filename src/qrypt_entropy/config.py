@@ -14,6 +14,8 @@ PROFILE_DEFAULTS: dict[str, dict[str, object]] = {
 }
 # Secrets each process refuses to start without, as environment variable names.
 MCP_SERVER_SECRETS = {"PEPPER": "token_pepper"}  # environment variable name -> setting
+# Each process connects as its own database role (least privilege). The owner string is for migrations only.
+ROLE_URL_ENV = {"mcp_server": "MCP_SERVER_URL", "http_service": "HTTP_SERVICE_URL"}
 HTTP_SERVICE_SECRETS = {"PEPPER": "token_pepper", "KEY_HASH_SECRET": "key_hash_secret"}
 
 
@@ -26,6 +28,9 @@ class Settings(BaseSettings):
 
     app_env: Literal["dev", "staging", "prod"] = Field("dev", validation_alias=AliasChoices("APP_PROFILE", "APP_ENV"))
     database_url: str = "postgresql://localhost:5432/qrypt"
+    mcp_server_url: str | None = None  # connection string of the mcp_server role
+    http_service_url: str | None = None  # connection string of the http_service role
+    migrator_url: str | None = None  # the owner string, read by migrations/env.py only
     log_level: str = "INFO"
     log_file: str = "logs/server.log"
     mcp_client_key: str | None = None
@@ -55,7 +60,18 @@ class Settings(BaseSettings):
     def secret_values(self) -> list[str]:
         """Every secret this process holds, so the logger can refuse to write it."""
         secrets = [v.get_secret_value() for v in (self.token_pepper, self.qrypt_api_token) if v]
-        return secrets + [v for v in (self.mcp_client_key, self.key_hash_secret) if v]
+        urls = (self.mcp_server_url, self.http_service_url, self.migrator_url)
+        return secrets + [v for v in (self.mcp_client_key, self.key_hash_secret, *urls) if v]
+
+    def bind_role(self, role: str) -> None:
+        """Connect as `role`: its own connection string replaces `database_url`. In prod a missing one stops the
+        start, so the process can never run on the owner string."""
+        env_name = ROLE_URL_ENV[role]
+        url = getattr(self, f"{role}_url")
+        if url:
+            object.__setattr__(self, "database_url", url)
+        elif self.app_env == "prod":
+            raise ConfigError(f"required secret not set: {env_name}")
 
     def require(self, secrets: dict[str, str]) -> None:
         missing = [env_name for env_name, field in secrets.items() if not getattr(self, field)]

@@ -213,7 +213,7 @@ async def test_wrong_size_fetch_is_discarded(monkeypatch):
     assert pool.level == 9 and marks == ["failed"]
 
 
-async def test_startup_check_bytes_are_served_after_every_refill_batch():  # S20 AC4, DEVIATIONS 14
+async def test_startup_check_bytes_are_served_after_every_refill_batch():  # S20 AC4, DEVIATIONS 17
     pool = Pool(low_mark_bytes=0, high_mark_bytes=0)
     pool.add("check", b"aaaa", last=True)
     pool.add("refill-1", b"bbbb")

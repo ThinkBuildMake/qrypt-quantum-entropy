@@ -125,6 +125,7 @@ def main() -> int:
         register_secret(secret)
     try:
         settings.require(MCP_SERVER_SECRETS)
+        settings.bind_role("mcp_server")  # not the owner string; prod refuses to start without MCP_SERVER_URL
     except ConfigError as err:
         log.error("start_refused", cause=str(err))
         return 1

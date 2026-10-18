@@ -49,7 +49,10 @@ Every setting `.env.example` lists, in the same order. Secret means: set it in t
 | Variable | Secret | Purpose |
 |---|---|---|
 | `APP_ENV` | no | profile: dev, staging or prod |
-| `DATABASE_URL` | yes | connection string; on Render it comes from the database |
+| `DATABASE_URL` | yes | local default connection string (the database owner); each process uses its own role's string below when it is set |
+| `MCP_SERVER_URL` | yes | connection string of the `mcp_server` role; required when `APP_ENV=prod` |
+| `HTTP_SERVICE_URL` | yes | connection string of the `http_service` role; required when `APP_ENV=prod`, set in the Render dashboard |
+| `MIGRATOR_URL` | yes | connection string of the database owner; read by migrations only (else `DATABASE_URL`); on Render it comes from the database |
 | `LOG_LEVEL` | no | log level; the profile sets a default |
 | `LOG_FILE` | no | log file path; empty means stdout |
 | `MCP_CLIENT_KEY` | yes | client key the MCP server is launched with |
@@ -101,9 +104,9 @@ database**; create the production database in section 6.
 
 ### Step 4a: Render web service and Render Postgres (spike)
 
-1. In Render choose New, Blueprint and point it at this repository. `render.yaml` creates the Render web service `qrypt-entropy` (free plan, Python 3.14, health check `/health`) and the Render Postgres `qrypt-db` (free, Postgres 18) and wires `DATABASE_URL` from the database to the service.
-2. In the service's Environment tab fill the three values `render.yaml` leaves empty (`sync: false`): `PEPPER`, `KEY_HASH_SECRET`, and add `QRYPT_API_KEY` only when you do the live run (section 8). Generate the first two with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Do not paste them anywhere else.
-3. The start command runs `alembic upgrade head` (safe to run twice) and then uvicorn; the free plan has no pre-deploy command, which is why migrations run at start. Schema is created only by migrations (DP-3).
+1. In Render choose New, Blueprint and point it at this repository. `render.yaml` creates the Render web service `qrypt-entropy` (free plan, Python 3.14, health check `/health`) and the Render Postgres `qrypt-db` (free, Postgres 18) and wires the database owner's string to the service as `MIGRATOR_URL`, which only the migration uses. The service itself connects as the least-privilege `http_service` role through `HTTP_SERVICE_URL`; it has no `DATABASE_URL` (a `prod` service refuses to start without `HTTP_SERVICE_URL`).
+2. In the service's Environment tab fill the values `render.yaml` leaves empty (`sync: false`): `PEPPER`, `KEY_HASH_SECRET`, `HTTP_SERVICE_URL` (see step 4c), and add `QRYPT_API_KEY` only when you do the live run (section 8). Generate the first two with `python -c "import secrets; print(secrets.token_urlsafe(48))"`. Do not paste them anywhere else.
+3. The start command runs `alembic upgrade head` as the owner (`MIGRATOR_URL`; safe to run twice) and then uvicorn; the free plan has no pre-deploy command, which is why migrations run at start. Schema is created only by migrations (DP-3).
 4. TLS is terminated by Render; plain HTTP should be redirected to HTTPS. This has not been seen working (checklist item 3).
 
 ### Step 4b: the roles spike on the real database (S01, spike S-1)
@@ -119,11 +122,18 @@ Expect the four checks create, grant, insert and denied-select to pass; the scri
 It also runs locally (`make spike-roles` against the local server; it passed on Postgres 16). If it fails on Render, use the
 Neon fallback below. The external connection string needs `?sslmode=require` if it does not already carry it.
 
-### Step 4c: Neon fallback
+### Step 4c: give the service its own role
+
+The first deploy's migration creates the roles without a password, so the service cannot log in as `http_service` yet. Set the
+password from your machine (`HTTP_SERVICE_PASSWORD=... DATABASE_URL=$RENDER_EXTERNAL_URL python scripts/set_role_passwords.py`),
+then set `HTTP_SERVICE_URL` on the service to the database's connection string with the user `http_service` and that password
+(and `?sslmode=require` if needed), and redeploy. Do the same with `MCP_SERVER_URL` for an MCP server that runs against this database.
+
+### Step 4d: Neon fallback
 
 If the spike fails on Render Postgres, create a Neon free project (Postgres, no expiry, no card), take its connection string
-(include `sslmode=require`), set it as `DATABASE_URL` on the Render web service (replacing the `fromDatabase` value in the dashboard
-or in `render.yaml`), and repeat `make spike-roles DATABASE_URL=...` against it. Neon scales to zero after 5 minutes idle (the
+(include `sslmode=require`), set it as `MIGRATOR_URL` on the Render web service (replacing the `fromDatabase` value in the dashboard
+or in `render.yaml`) and build `HTTP_SERVICE_URL` from it with the `http_service` role, and repeat `make spike-roles DATABASE_URL=...` against it. Neon scales to zero after 5 minutes idle (the
 first query after that is slow), has no scheduled backups, and its compute-hours run out after 100 a month (then it suspends),
 so the daily backup matters just as much. Record the choice in `docs/DEVIATIONS.md`.
 
