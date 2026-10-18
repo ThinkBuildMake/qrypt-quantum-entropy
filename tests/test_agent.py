@@ -32,7 +32,7 @@ async def test_tool_error_reaches_the_model_without_a_value(tmp_path):
     config = {"LOG_FILE": str(tmp_path / "s.log"), **server_env()}
     async with McpTools(server_params(client_key(), config)) as tools:
         result = await tools.call("random_int", {"min": 5, "max": 1})
-    assert result.value is None and result.error
+    assert result.value is None and result.error and result.code == "invalid_argument"
 
 
 def run_agent(cwd, *args):

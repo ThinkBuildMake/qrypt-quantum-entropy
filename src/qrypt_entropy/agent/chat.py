@@ -10,6 +10,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from qrypt_entropy.agent.guard import (
+    CANNOT_ISSUE,
+    LOOP_BOUND,
+    MODEL_ERRORS,
+    SAFETY_RULES,
+    log_fixed_reply,
+    model_failure_message,
+    unlisted_tool_message,
+)
 from qrypt_entropy.agent.settings import AgentSettings
 from qrypt_entropy.logs import get_logger
 
@@ -21,7 +30,7 @@ SYSTEM_PROMPT = (
     "You are the Secure Token Agent. To issue anything, call a tool. A tool result holds a placeholder such as "
     "{{v1}} instead of the real value: write that placeholder exactly in your reply, and never invent a code, key "
     "or number yourself."
-)
+) + SAFETY_RULES
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,7 @@ class ToolResult:
     value: str | int | None = None
     metadata: dict = field(default_factory=dict)
     error: str | None = None
+    code: str | None = None  # the server's error code, when the tool failed
 
 
 class Model(Protocol):
@@ -65,22 +75,44 @@ class Agent:
         self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self.values: dict[str, str] = {}  # placeholder number -> issued value; memory only
         self.model_requests = 0
+        self._issued: list[str] = []  # placeholder keys issued in the current turn
+        self._refusals: list[str] = []  # plain sentences for this turn's cannot-issue tool errors
 
     async def turn(self, text: str) -> str:
+        start = len(self.messages)
+        self._issued, self._refusals = [], []
         self.messages.append({"role": "user", "content": self._hide(text)})
         for round_ in range(MAX_ROUNDS):
             last = round_ == MAX_ROUNDS - 1
             self.model_requests += 1
             log.info("model_request", n=self.model_requests)
-            reply = await self.model.complete(self.messages, [] if last else self.tools.specs())
+            try:
+                reply = await self.model.complete(self.messages, [] if last else self.tools.specs())
+            except MODEL_ERRORS as exc:
+                plain = model_failure_message(exc)
+                log_fixed_reply("model_failure")
+                if not self._issued:
+                    del self.messages[start:]  # leave no half turn behind
+                    return plain
+                return self._fill(
+                    f"{plain} Before that, this was issued: " + ", ".join("{{" + k + "}}" for k in self._issued)
+                )
             self.messages.append(_assistant_message(reply))
             if last and reply.tool_calls:
                 break
             if not reply.tool_calls:
-                return self._fill(reply.content or "")
+                return self._compose(reply.content or "")
             for call in reply.tool_calls:
                 self.messages.append({"role": "tool", "tool_call_id": call.id, "content": await self._run_tool(call)})
-        return "I could not finish that request: the model kept asking for more tool calls, so I stopped."
+        log_fixed_reply("loop_bound")
+        return LOOP_BOUND
+
+    def _compose(self, text: str) -> str:
+        """The final reply: the model's text, or the agent's own sentence when no tool call this turn issued a value."""
+        if self._refusals and not self._issued:
+            log_fixed_reply("cannot_issue")
+            return " ".join(self._refusals)
+        return "\n".join([self._fill(text), *self._refusals])
 
     def _hide(self, text: str) -> str:
         """Nothing the user types may carry an issued value to the provider: swap held values for their placeholders."""
@@ -92,14 +124,20 @@ class Agent:
         """Call the tool and return what the model may see: a placeholder and the metadata, never the value."""
         if call.arguments is None:
             return json.dumps({"error": "the tool arguments were not valid JSON; call again with a JSON object"})
+        if (unlisted := unlisted_tool_message(call.name, self.tools.specs())) is not None:
+            log.warning("unlisted_tool_refused", tool=call.name)
+            return json.dumps({"error": unlisted})
         arguments = dict(call.arguments)
         if call.name == "generate_token" and arguments.get("expiry_seconds") is None:
             arguments["expiry_seconds"] = self.settings.token_expiry_default_seconds  # FR-2.1
         result = await self.tools.call(call.name, arguments)
-        log.info("agent_tool_call", tool=call.name, ok=result.error is None)
+        log.info("agent_tool_call", tool=call.name, ok=result.error is None, code=result.code)
         if result.error is not None:
+            if (sentence := CANNOT_ISSUE.get(result.code or "")) and sentence not in self._refusals:
+                self._refusals.append(sentence)
             return json.dumps({"error": result.error})
         key = f"v{len(self.values) + 1}"
+        self._issued.append(key)
         self.values[key] = str(result.value)
         return json.dumps({"value": "{{" + key + "}}", "metadata": result.metadata})
 

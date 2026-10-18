@@ -20,30 +20,36 @@ STUB_SPECS = [
 
 
 class ScriptedModel:
-    """Replies from a fixed script, one step per request, and keeps a copy of every request it was sent."""
+    """Replies from a fixed script, one step per request (an exception step is raised), and keeps a copy of every
+    request it was sent."""
 
     name = "scripted"
 
-    def __init__(self, steps: list[ModelReply]):
+    def __init__(self, steps: list[ModelReply | Exception]):
         self._steps = list(steps)
         self.requests: list[dict] = []
 
     async def complete(self, messages: list[dict], tools: list[dict]) -> ModelReply:
         self.requests.append(copy.deepcopy({"messages": messages, "tools": tools}))
-        return self._steps.pop(0)
+        step = self._steps.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
 
 
 class StubTools:
-    """Returns a fixed value per tool and records the calls it received."""
+    """Returns a fixed value per tool (or, for a tool in `errors`, that error code) and records the calls received."""
 
-    def __init__(self, values: dict[str, str | int]):
-        self.values, self.calls = values, []
+    def __init__(self, values: dict[str, str | int], errors: dict[str, str] | None = None):
+        self.values, self.errors, self.calls = values, errors or {}, []
 
     def specs(self) -> list[dict]:
         return STUB_SPECS
 
     async def call(self, name: str, arguments: dict) -> ToolResult:
         self.calls.append((name, arguments))
+        if name in self.errors:
+            return ToolResult(error=f"stub error {self.errors[name]}", code=self.errors[name])
         return ToolResult(value=self.values[name], metadata=STUB_METADATA)
 
 

@@ -56,16 +56,18 @@ class McpTools:
     async def call(self, name: str, arguments: dict) -> ToolResult:
         result = await self._client.call_tool(name, arguments)
         if result.is_error:
-            return ToolResult(error=_error_text(result.content[0].text if result.content else ""))
+            text = result.content[0].text if result.content else ""
+            return ToolResult(error=_error_field(text, "message", "the tool failed"), code=_error_field(text, "error"))
         data = result.structured_content or {}
         if data.get("value") is None:
             return ToolResult(error="the tool returned no value")
         return ToolResult(value=data.get("value"), metadata=data.get("metadata", {}))
 
 
-def _error_text(text: str) -> str:
-    """The server's ErrorBody message, never more than that."""
+def _error_field(text: str, field: str, default: str | None = None) -> str | None:
+    """One field of the server's ErrorBody (a message or a code), never more than that."""
     try:
-        return str(json.loads(text).get("message") or "the tool failed")
+        value = json.loads(text).get(field)
+        return str(value) if value else default
     except ValueError, AttributeError:
-        return "the tool failed"
+        return default
