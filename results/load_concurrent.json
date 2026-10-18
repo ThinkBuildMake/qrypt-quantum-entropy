@@ -1,0 +1,79 @@
+{
+  "run": "PF-2 sustained concurrency",
+  "callers": 100,
+  "seconds": 43.6,
+  "calls": 10099,
+  "successful_calls": 9891,
+  "throughput_calls_per_s": 231.7,
+  "errors_by_code": {
+    "invalid_argument": 208
+  },
+  "server_error_rate": 0.0,
+  "note_errors": "about 1 call in 50 is deliberately invalid (length 0) and answers invalid_argument",
+  "latency_under_load_ms": {
+    "p50": 416.15,
+    "p95": 755.76,
+    "p99": 883.43,
+    "max": 1005.7
+  },
+  "upstream_requests_excluding_startup_check": 5,
+  "kib_fetched_per_upstream_request": 64.0,
+  "kib_served_per_upstream_request": 52.83,
+  "max_upstream_requests_in_10s": 3,
+  "upstream_429s": 0,
+  "pool_max_level_kib": 95.0,
+  "pool_first_refill_level_kib": 0.9,
+  "overlapping_ranges": 0,
+  "issuances_rows": 9894,
+  "calls_spanning_two_batches": 4,
+  "environment": {
+    "machine": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39, 4 CPUs, Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "python": "3.14.6",
+    "database": "PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), local server (not the Docker Compose service) on localhost:5432",
+    "upstream": "committed mock Qrypt (tests/mock_qrypt.py): 200 ms added latency, 30 requests per 10 s enforced; the live Qrypt service was not used",
+    "transport": "MCP over stdio to a server process; client and server share the machine",
+    "budget": "the test database's cap is raised to 100,000,000 KiB (production cap: 10,240 KiB)"
+  },
+  "checks": [
+    {
+      "check": "AC2 no error other than invalid_argument or unauthorized",
+      "pass": true,
+      "detail": "10099 calls in 43.6 s with 100 in flight; errors {'invalid_argument': 208}"
+    },
+    {
+      "check": "AC2 at least the asked duration and calls",
+      "pass": true,
+      "detail": "43.6 s, 10099 calls"
+    },
+    {
+      "check": "AC3 KiB per upstream request, startup check excluded, is 64 or more",
+      "pass": true,
+      "detail": "budget meter 320 KiB fetched / 5 requests = 64.00; 264.2 KiB actually served"
+    },
+    {
+      "check": "AC4 at most 30 upstream requests in any 10 s window",
+      "pass": true,
+      "detail": "maximum 3 over 6 requests (0 answered 429)"
+    },
+    {
+      "check": "AC5 pool level never above the high mark",
+      "pass": true,
+      "detail": "maximum 95.0 KiB (mark 128 KiB) over 4550 samples every 10 ms"
+    },
+    {
+      "check": "AC5 every refill began below the low mark",
+      "pass": true,
+      "detail": "first refill began at 0.9 KiB (mark 32 KiB); 5 refills, 0 started at or above it"
+    },
+    {
+      "check": "AC6 no byte served twice",
+      "pass": true,
+      "detail": "0 overlapping ranges among 9898 ranges from 9894 issuances"
+    },
+    {
+      "check": "AC7 one audit row per successful call",
+      "pass": true,
+      "detail": "9894 successful calls (including 3 warm-up), 9894 issuances rows; 4 calls span two batches and list both; 0 rows whose ranges do not add up"
+    }
+  ]
+}

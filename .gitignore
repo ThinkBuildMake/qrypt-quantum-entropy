@@ -11,4 +11,5 @@ htmlcov/
 logs/
 .env
 backups/
-results/
+results/*
+!results/load_*.json

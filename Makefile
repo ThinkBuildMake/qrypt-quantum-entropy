@@ -29,6 +29,8 @@ export GATE_P95_MS
 
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue demo-operate demo-redeem mcp-list mcp-call report sample-metrics test lint gate \
         agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
+.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
+        load load-latency load-concurrent agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -131,6 +133,14 @@ backup: ## daily backup: pg_dump as the backup role, encrypted with age; needs B
 
 restore-drill: ## restore the newest backup into a fresh Postgres and re-run the migrations; needs AGE_IDENTITY (docs/BACKUP.md)
 	$(UV) python scripts/restore_drill.py
+
+load-latency: db-up ## S36 PF-1: 1,000 warm-pool calls over stdio, p50/p95/p99 -> results/load_latency.json (own throwaway database; ~15 s)
+	$(UV) python scripts/load_test.py latency
+
+load-concurrent: db-up ## S36 PF-2..PF-3, DE-1, SC-1, VR-1, VR-9: 100 callers for 30 s and 10,000 calls -> results/load_concurrent.json (~50 s)
+	$(UV) python scripts/load_test.py concurrent
+
+load: load-latency load-concurrent ## both load runs
 
 config-show: ## print the effective settings, secrets redacted
 	@$(UV) python scripts/config_show.py
