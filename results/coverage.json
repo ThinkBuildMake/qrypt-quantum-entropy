@@ -1,0 +1,40 @@
+{
+  "areas": {
+    "pool accounting": {
+      "files": [
+        "service/pool.py"
+      ],
+      "percent": 94.8
+    },
+    "unbiased sampling": {
+      "files": [
+        "service/issuance.py"
+      ],
+      "percent": 100.0
+    },
+    "budget enforcement": {
+      "files": [
+        "service/meter.py"
+      ],
+      "percent": 94.8
+    },
+    "token issue and verify": {
+      "files": [
+        "service/tokens.py"
+      ],
+      "percent": 95.3
+    },
+    "failure handling": {
+      "files": [
+        "errors.py",
+        "upstream/source.py",
+        "agent/guard.py"
+      ],
+      "percent": 95.9
+    }
+  },
+  "core_total_percent": 96.2,
+  "missing_files": [],
+  "threshold_percent": 80.0,
+  "suite_total_percent": 91.3
+}

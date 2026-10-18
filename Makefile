@@ -40,6 +40,8 @@ export GATE_P95_MS
 .PHONY: check-routes
 .PHONY: clean-clone-check
 .PHONY: config-show
+.PHONY: coverage
+.PHONY: coverage-check
 .PHONY: db-down
 .PHONY: db-reset
 .PHONY: db-up
@@ -72,8 +74,11 @@ export GATE_P95_MS
 .PHONY: migrate
 .PHONY: mock-qrypt
 .PHONY: readme-check
+.PHONY: offline-triple
 .PHONY: report
 .PHONY: restore-drill
+.PHONY: results
+.PHONY: results-check
 .PHONY: route-latency
 .PHONY: run-http
 .PHONY: sample-metrics
@@ -229,6 +234,26 @@ fault-suite: db-up migrate ## S39: every Qrypt fault (403, 401, 429, 5xx, slow, 
 two-process-budget: db-up migrate ## S39: two server processes share one cap; a 429 retry stays one batch
 	$(UV) pytest tests/gate/test_two_process_budget_gate.py --no-cov -q
 
+# S41: the 80% coverage line (EV-5) and the results file (EV-6).
+COVERAGE_MIN ?= 80
+FILE ?= results/RESULTS.md
+
+coverage-check: ## S41 AC1: core-logic coverage from the last `make coverage` run against COVERAGE_MIN (default 80); exits 1 below it
+	$(UV) python -m tools.coverage_check --min $(COVERAGE_MIN)
+
+coverage: db-up migrate ## S41 AC1: full suite with branch coverage, then the core-logic check; fails below COVERAGE_MIN (default 80): make coverage COVERAGE_MIN=99
+	$(UV) pytest --cov --cov-fail-under=0 --cov-report=json:results/coverage_report.json --cov-report=term:skip-covered -q
+	$(MAKE) coverage-check COVERAGE_MIN=$(COVERAGE_MIN)
+
+results: ## S41 AC2, AC3: write results/RESULTS.md from coverage, load and real-model evaluation results (results/eval/, never eval_stub/)
+	$(UV) python scripts/make_results.py
+
+results-check: ## S41 AC2 to AC4: the results file holds every required section; FILE=other.md checks another file
+	$(UV) python -m tools.results_check $(FILE)
+
+offline-triple: db-up migrate ## S41 AC5: the unit suite 3 times, outbound network blocked, no Qrypt or model key: identical results, 0 network calls
+	$(UV) python scripts/offline_triple.py
+
 config-show: ## print the effective settings, secrets redacted
 	@$(UV) python scripts/config_show.py
 
@@ -297,5 +322,6 @@ gate: db-up migrate ## the regression gate: lint, tests + coverage + matrix + fu
 	$(MAKE) readme-check
 	$(MAKE) snippet-check
 	$(MAKE) secret-scan
+	$(MAKE) results-check
 	$(MAKE) test
 	@echo "GATE PASSED"

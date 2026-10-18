@@ -3,7 +3,6 @@
 import logging
 import shutil
 import subprocess
-import uuid
 
 import psycopg
 import pytest
@@ -78,7 +77,7 @@ def test_ac4_admin_revokes_a_client(http, admin, db):
         ).fetchone() == (True,)
 
 
-@pytest.mark.parametrize("client_id", [str(uuid.uuid4()), "not-a-uuid"])
+@pytest.mark.parametrize("client_id", ["3f1c2a9e-5b7d-4e86-9a40-1d2e3f4a5b6c", "not-a-uuid"])
 def test_ac5_revoking_an_unknown_client_is_not_found(http, admin, client_id):
     r = http.post(f"/admin/clients/{client_id}/revoke", headers=admin)
     assert (r.status_code, r.json()["error"]) == (404, "not_found")

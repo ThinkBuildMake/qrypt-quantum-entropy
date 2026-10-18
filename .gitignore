@@ -15,3 +15,5 @@ results/*
 !results/load_*.json
 !results/eval/
 !results/eval_stub/
+!results/RESULTS.md
+!results/coverage.json
