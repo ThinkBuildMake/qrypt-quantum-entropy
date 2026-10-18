@@ -27,14 +27,50 @@ export DATABASE_URL
 GATE_P95_MS ?= 50
 export GATE_P95_MS
 
-.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue demo-operate demo-redeem mcp-list mcp-call report sample-metrics test lint gate \
-        agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
-.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
-        load load-latency load-concurrent agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
-.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
-        fault-suite two-process-budget agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
-.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
-        fuzz check-routes route-latency agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
+# One .PHONY line per target: keeps parallel branches merge-safe (union merge).
+.PHONY: agent-capture-check
+.PHONY: agent-scripted
+.PHONY: agent-tools
+.PHONY: backup
+.PHONY: check-env
+.PHONY: check-imports
+.PHONY: check-language
+.PHONY: check-routes
+.PHONY: config-show
+.PHONY: db-down
+.PHONY: db-reset
+.PHONY: db-up
+.PHONY: db-url
+.PHONY: demo-guard
+.PHONY: demo-issue
+.PHONY: demo-operate
+.PHONY: demo-redeem
+.PHONY: fault-suite
+.PHONY: fuzz
+.PHONY: gate
+.PHONY: help
+.PHONY: install
+.PHONY: lint
+.PHONY: load
+.PHONY: load-concurrent
+.PHONY: load-latency
+.PHONY: mcp-call
+.PHONY: mcp-list
+.PHONY: migrate
+.PHONY: mock-qrypt
+.PHONY: report
+.PHONY: restore-drill
+.PHONY: route-latency
+.PHONY: run-http
+.PHONY: sample-metrics
+.PHONY: secret-scan
+.PHONY: seed
+.PHONY: seed-list-names
+.PHONY: spike-roles
+.PHONY: test
+.PHONY: test-db-restart
+.PHONY: trace
+.PHONY: two-process-budget
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
