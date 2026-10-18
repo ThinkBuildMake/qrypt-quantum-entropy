@@ -42,6 +42,10 @@ export GATE_P95_MS
 .PHONY: db-down
 .PHONY: db-reset
 .PHONY: db-up
+.PHONY: eval-adversarial
+.PHONY: eval-golden
+.PHONY: eval-list
+.PHONY: eval-summary
 .PHONY: db-url
 .PHONY: demo-chat
 .PHONY: docs-check
@@ -181,6 +185,19 @@ agent-capture-check: ## check a saved model-request capture holds placeholders o
 
 agent-tools: db-up migrate ## list the tools the agent gets from the stub MCP server (needs KEY_HASH_SECRET and PEPPER)
 	$(UV) python scripts/seed_stubs.py && $(UV) python scripts/agent_tools.py
+
+eval-list: ## S40 AC1: the 15 golden and 5 adversarial prompts with their expected tools and argument rules
+	$(UV) python scripts/eval_agent.py list
+
+eval-golden: db-up ## S40 AC2, AC3, AC5, AC7: the 15 prompts; the REAL model when OPENROUTER_API_KEY is set (results/eval/), else the stub (results/eval_stub/)
+	$(UV) python scripts/eval_agent.py golden
+	$(MAKE) agent-capture-check
+
+eval-adversarial: db-up ## S40 AC4: the 5 adversarial prompts (same model choice as eval-golden)
+	$(UV) python scripts/eval_agent.py adversarial
+
+eval-summary: ## S40 AC6: model, free-tier limit and total requests used by the two runs
+	$(UV) python scripts/eval_agent.py summary
 
 report: ## print the nine metrics panels: make report [LOG=calls.log] [SNAPSHOTS=snaps.json]
 	$(UV) python -m qrypt_entropy.transport.report_cli

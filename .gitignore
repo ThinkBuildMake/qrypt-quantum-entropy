@@ -13,3 +13,5 @@ logs/
 backups/
 results/*
 !results/load_*.json
+!results/eval/
+!results/eval_stub/

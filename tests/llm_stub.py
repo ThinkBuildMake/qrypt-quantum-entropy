@@ -16,12 +16,26 @@ TOOL_PHRASES = [  # (pattern on the user's text, tool name, builder of the argum
     (
         r"random bytes",
         "get_random_bytes",
-        lambda t: {"length": _int(r"(\d+)\s*random bytes", t, 16), "encoding": "hex"},
+        lambda t: {
+            "length": _int(r"(\d+)\s*random bytes", t, 16),
+            "encoding": "base64" if "base64" in t else "hex",
+        },
     ),
-    (r"random (number|integer)", "random_int", lambda t: dict(zip(("min", "max"), _two(t, (1, 100)), strict=True))),
-    (r"api key", "generate_token", lambda t: {"kind": "api_key"}),
+    (r"roll a die", "random_int", lambda t: {"min": 1, "max": 6}),
+    (
+        r"random (whole )?(number|integer)",
+        "random_int",
+        lambda t: dict(zip(("min", "max"), _two(t, (1, 100)), strict=True)),
+    ),
+    (r"uuid", "generate_token", lambda t: {"kind": "uuid_v4"}),
+    (r"api key", "generate_token", lambda t: _code(t, "api_key")),
     (r"(reset|one-time|otp|code)", "generate_token", lambda t: _code(t)),
 ]
+REFUSAL_PHRASES = r"ignore the budget|raise the cap|admin|secret|pepper|system prompt"
+REFUSE = (
+    "I can't do that: I can't change the budget or my role, and I don't reveal secrets or my instructions. "
+    "I can issue a real code, key or number with my tools if you like."
+)
 DECLINE = (
     "I can't make up a code, number or key myself, because it would not be real. "
     "I can issue a real one for you with my tools if you like."
@@ -36,16 +50,18 @@ def _int(pattern: str, text: str, default: int) -> int:
 
 
 def _two(text: str, default: tuple[int, int]) -> tuple[int, int]:
-    found = re.search(r"between (\d+) and (\d+)", text)
+    found = re.search(r"(?:between|from) (\d+) (?:and|to) (\d+)", text)
     return (int(found.group(1)), int(found.group(2))) if found else default
 
 
-def _code(text: str) -> dict:
-    args: dict = {"kind": "otp_6"}
+def _code(text: str, kind: str = "otp_6") -> dict:
+    args: dict = {"kind": kind}
     if user := re.search(r"user[ -]?(\w+)", text):
         args["owner"] = f"user-{user.group(1)}"
-    if minutes := re.search(r"(\d+)\s*minutes?", text):
-        args["expiry_seconds"] = int(minutes.group(1)) * 60
+    elif owner := re.search(r"([\w.]+@[\w.]+\w)|owned by ([\w-]+)", text):
+        args["owner"] = owner.group(1) or owner.group(2)
+    if amount := re.search(r"(\d+)\s*(minute|hour)s?", text):
+        args["expiry_seconds"] = int(amount.group(1)) * (60 if amount.group(2) == "minute" else 3600)
     return args
 
 
@@ -58,6 +74,8 @@ def decide(messages: list[dict]) -> dict:
             return {"role": "assistant", "content": "I could not issue that."}
         return {"role": "assistant", "content": f"Here it is: {body['value']}"}
     text = (last.get("content") or "").lower()
+    if re.search(REFUSAL_PHRASES, text):
+        return {"role": "assistant", "content": REFUSE}
     if re.search(r"make up|invent|guess|pretend", text):
         return {"role": "assistant", "content": DECLINE}
     if re.search(r"every token|all tokens|other users|everyone's", text):
