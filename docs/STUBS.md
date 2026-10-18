@@ -21,9 +21,9 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.pool` (`service/pool.py`) | `status` (module-level; `Pool.status` is real, S12) | S35 | S35 |
 | `qrypt_entropy.service.issuance` | `get_issuance` | S23 | S33 |
 | `qrypt_entropy.service.tokens` | `redeem` | S21 (S22 rate limit) | S33 |
-| `qrypt_entropy.service.issuance` | `call_stats` | S28 | S35 |
 | `qrypt_entropy.service.status` (`service/status.py`) | `get_health` | S29 | S35 |
-| `qrypt_entropy.service.status` | `report_once` | S28 | S35 |
+| `qrypt_entropy.service.status` | `get_metrics` | S30 | S35 |
+| `qrypt_entropy.agent.chat` (`agent/chat.py`) | `chat_turn` | S25 (S26, S27) | S32 |
 
 Not decorated but also provisional:
 
@@ -82,3 +82,4 @@ S29 (done): `status.get_health` is real and no longer a stub (its table row abov
 
 S20 (done): the issue flow is joined end to end. The MCP server process owns one `Pool` (`pool.get_pool()`): `build_server` has a lifespan that runs the 1 KiB startup check (`Pool.start`) before the first tool call and stops the pool at shutdown (`run_pool=False` leaves a pool installed with `pool.use_pool` alone, for tests). `pool.take` is the issuance code's way in; `pool.use_pool(None)` / `pool.shutdown()` reset the singleton (the suite does it around every test, `tests/conftest.py`). The pool now calls `meter.reserve` and `meter.mark_batch` through `asyncio.to_thread`, so the blocking database calls no longer stall the event loop; a batch is marked `received` before its bytes join the pool, and a refill cancelled during a reservation settles that batch as `failed`. The startup check's 1 KiB joins the pool but is served after every refill batch (DEVIATIONS 14). `make mock-qrypt` serves `tests/mock_qrypt.py` on :8099 (`GET /__mock/status?code=503` makes it fail, `code=200` restores it); `make demo-issue` runs the human demo on a fresh database against it. The suite points every server at one session-wide mock (`tests/conftest.py`) and never at the live service. Gate cases: `tests/gate/test_issue_wiring_gate.py`.
 S20 follow-ups: a take now waits `WAIT_S` = 1.8 s so the error is out within 2 s (RL-1). The server waits for the startup check at most `STARTUP_WAIT_S` = 5 s (`mcp_server.py`). `Meter.mark_batch` only marks a batch still `requested` (the first mark stands); `Meter.settle_stale` marks upstream batches left `requested` for over 10 minutes as failed, and `Pool.start` calls it. A cancelled reservation is settled by a worker thread, never on the event loop.
+S28 (done): `service/status.py` has the real `StatusReporter` (the statusReport job) and `report_once`; `call_stats` and `request_stats` are real (S13, S08), so they leave the stub table. The job is handed `Pool.status`, `Issuance.call_stats` and `source.request_stats` (no Pool/Status import cycle); it upserts one `server_status` row per process (`instance_id` is new at each start, old rows stay: A-15) every 5 s and, on a failed write, logs `status_report_failed` and tries again at the next tick. `pool.status` (module-level) is still the S35 stub, so a running server reports the stub pool until S35 swaps in `Pool.status` and starts `default_reporter().start()` with the server. The snapshot keys are the pinned names `startedAt`, `upstreamRequestsLast10s`, `callsByTool`, `errorsByCode`, `toolCallDurationMs`.
