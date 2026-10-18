@@ -17,4 +17,4 @@ make backup / make restore-drill  # daily encrypted pg_dump and its restore dril
 
 Layout (nothing imports a layer above it): `src/qrypt_entropy/` — `transport/` (MCP tools, HTTP routes, report CLI) ->
 `service/` (one file per module) -> `upstream/` (entropy source) -> `storage/`; `agent/` is a separate process.
-Docs: `docs/ARCHITECTURE.md` (contracts), `docs/STUBS.md`, `docs/DEVIATIONS.md`, `docs/DEPLOY.md`.
+Docs: `docs/ARCHITECTURE.md` (contracts), `docs/STUBS.md`, `docs/DEVIATIONS.md`, `docs/DEPLOY.md`, `docs/DEPLOYMENT_GUIDE.md` (deploy, backup, budget log; `make guide-check`).

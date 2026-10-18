@@ -49,6 +49,7 @@ export GATE_P95_MS
 .PHONY: fault-suite
 .PHONY: fuzz
 .PHONY: gate
+.PHONY: guide-check
 .PHONY: help
 .PHONY: install
 .PHONY: lint
@@ -72,6 +73,8 @@ export GATE_P95_MS
 .PHONY: test-db-restart
 .PHONY: trace
 .PHONY: two-process-budget
+.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue demo-operate mcp-list mcp-call report sample-metrics test lint gate \
+        agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env guide-check
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -222,6 +225,9 @@ check-imports:
 check-env: ## .env.example lists every setting with placeholders only
 	$(UV) python -m tools.check_env
 
+guide-check: ## docs/DEPLOYMENT_GUIDE.md covers the required steps and names only real targets, scripts and variables
+	$(UV) python -m tools.guide_check
+
 check-language:
 	$(UV) python tools/check_language.py
 
@@ -233,6 +239,7 @@ gate: db-up migrate ## the regression gate: lint, tests + coverage + matrix + fu
 	$(MAKE) check-imports
 	$(MAKE) check-language
 	$(MAKE) check-env
+	$(MAKE) guide-check
 	$(MAKE) secret-scan
 	$(MAKE) test
 	@echo "GATE PASSED"

@@ -1,5 +1,7 @@
 # DEPLOY.md — S01 stub service on Render, and the checks that need Render
 
+**The deployment guide is `docs/DEPLOYMENT_GUIDE.md`** (steps, limits, backup, budget log, first-deploy checklist); where this file differs, the guide is current. This file keeps the S01 check commands and the S20 live-run procedure.
+
 Nothing here has been run: S01 was built without a Render account (see `docs/DEVIATIONS.md`).
 
 1. In Render choose New, Blueprint, point it at this repository: `render.yaml` creates a free web service
@@ -33,15 +35,11 @@ at the mock's token) and connect. `GET http://127.0.0.1:8099/__mock/status?code=
 2. `export QRYPT_API_KEY=<the real Entropy-service token>`; leave `QRYPT_BASE_URL` unset (default `https://api-eus.qrypt.com`); export `DATABASE_URL`, `KEY_HASH_SECRET` and `PEPPER`; then `make migrate seed` and note the billing-agent key.
 3. In `docs/mcp-client.json` set `MCP_CLIENT_KEY` to that key, `QRYPT_API_KEY` to the real token, delete the `QRYPT_BASE_URL` line, and connect MCP Inspector. The server's startup check makes the first Qrypt request.
 4. Call `get_random_bytes` with `length` 16 and `encoding` hex, once. Disconnect.
-5. Read the evidence and write the reading in the budget log below:
+5. Read the evidence and write the reading in the budget log (`docs/DEPLOYMENT_GUIDE.md` section 8):
    ```
    psql "$DATABASE_URL" -c 'SELECT purpose, kib, outcome FROM batches ORDER BY requested_at' -c 'SELECT used_kib FROM budget'
    ```
    Expected: one `startup_check` of 1 KiB and one `refill` of 64 KiB or more, both `received`, and `used_kib` 1,024 or less (65 with the defaults).
    If the startup check shows `failed`, read `logs/server.log` for `pool_startup_check_failed`: a 401 names an invalid or expired token.
 
-Budget log (the human fills in a row per live run):
-
-| Date | Token owner | startup_check KiB | refill KiB | used_kib after | Cap | Notes |
-|---|---|---|---|---|---|---|
-| | | | | | | |
+Budget log: the single running log, with a total across databases, is in `docs/DEPLOYMENT_GUIDE.md` section 8. Write the reading there.
