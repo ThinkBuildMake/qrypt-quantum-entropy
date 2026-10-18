@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from qrypt_entropy.transport.http_app import app
-from tests.conftest import admin_key, seed_issuance
+from tests.conftest import admin_key
 
 REF = "11111111-1111-4111-8111-111111111111"
 
@@ -17,14 +17,10 @@ def test_ac3_health_has_contract_fields(http):
     assert set(body) == {"reporting", "reportAgeSeconds", "pool", "upstream"}
 
 
-def test_ac5_usage_and_issuance_shapes(http):
-    seed_issuance(REF)
+def test_ac5_usage_shape(http):  # the issuance trace's shape is covered by tests/gate/test_trace_gate.py (S23, S33)
     usage = http.get("/admin/usage", headers={"Authorization": f"Bearer {admin_key()}"}).json()
     assert set(usage) == {"budget", "perClient"}
     assert set(usage["budget"]) == {"capKib", "usedKib"}
-    issuance = http.get(f"/admin/issuances/{REF}", headers={"Authorization": f"Bearer {admin_key()}"}).json()
-    assert issuance["reference"] == REF
-    assert {"client", "tool", "bytesConsumed", "createdAt", "batches", "token"} <= set(issuance)
 
 
 @pytest.mark.parametrize(

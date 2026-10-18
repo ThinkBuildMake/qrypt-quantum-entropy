@@ -27,7 +27,7 @@ export DATABASE_URL
 GATE_P95_MS ?= 50
 export GATE_P95_MS
 
-.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue demo-operate mcp-list mcp-call report sample-metrics test lint gate \
+.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue demo-operate demo-redeem mcp-list mcp-call report sample-metrics test lint gate \
         agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
@@ -84,7 +84,7 @@ mock-qrypt: ## serve the committed mock Qrypt on 127.0.0.1:$(MOCK_PORT) (default
 demo-guard:
 ifeq ($(DB_MODE),external)
 ifneq ($(CONFIRM_RESET),1)
-	@echo "refusing: demo-issue and demo-operate RESET the database in DATABASE_URL. Unset DATABASE_URL, or run with CONFIRM_RESET=1 if you mean it." >&2; exit 1
+	@echo "refusing: demo-issue, demo-operate and demo-redeem RESET the database in DATABASE_URL. Unset DATABASE_URL, or run with CONFIRM_RESET=1 if you mean it." >&2; exit 1
 endif
 endif
 
@@ -93,6 +93,9 @@ demo-issue: demo-guard db-reset ## S20 demo on a FRESH local database against th
 
 demo-operate: demo-guard db-reset ## S34 demo on a FRESH local database against the mock Qrypt (resets the database): create and revoke clients, usage, budget cap
 	$(UV) python scripts/demo_operate.py
+
+demo-redeem: demo-guard db-reset ## S33 demo on a FRESH local database against the mock Qrypt (resets the database): issue, redeem, trace
+	$(UV) python scripts/demo_redeem.py
 
 mcp-list: ## list the MCP tools over stdio
 	@rm -f logs/server.log
