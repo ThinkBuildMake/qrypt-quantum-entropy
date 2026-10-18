@@ -14,7 +14,7 @@ from tests.conftest import client_key
 P = Principal("c", "client", "n")
 
 
-async def test_source_bounds_and_the_pool_status_stub():
+async def test_source_bounds_and_the_pool_status():
     source.use_source(source.TestSource())  # the real client needs a network; S08 owns its tests
     try:
         assert len((await source.fetch(1)).bytes) == 1024

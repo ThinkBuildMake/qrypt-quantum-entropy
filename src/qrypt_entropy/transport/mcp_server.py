@@ -16,6 +16,7 @@ from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailab
 from qrypt_entropy.logs import configure_logging, get_logger, register_secret
 from qrypt_entropy.models import IssuedValue, Principal
 from qrypt_entropy.service import access, issuance, pool
+from qrypt_entropy.service.status import default_reporter
 from qrypt_entropy.storage.db import close_pools
 
 log = get_logger("mcp")
@@ -60,6 +61,8 @@ async def _pool_lifespan(_server: MCPServer) -> AsyncIterator[None]:
     The server waits for the check for at most STARTUP_WAIT_S (a 429 backoff can take minutes); a slower check
     finishes in the background, and calls meanwhile wait on the pool, which has its own 2 s bound."""
     starting = asyncio.create_task(pool.get_pool().start())
+    reporter = default_reporter()  # the 5 s status report (OB-9) runs while the server does
+    reporter.start()
     try:
         try:
             await asyncio.wait_for(asyncio.shield(starting), STARTUP_WAIT_S)
@@ -67,6 +70,7 @@ async def _pool_lifespan(_server: MCPServer) -> AsyncIterator[None]:
             log.warning("pool_startup_check_slow", waited_s=STARTUP_WAIT_S)
         yield
     finally:
+        await reporter.stop()
         starting.cancel()
         await asyncio.gather(starting, return_exceptions=True)
         await pool.shutdown()

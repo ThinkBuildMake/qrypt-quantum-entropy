@@ -42,6 +42,7 @@ export GATE_P95_MS
 .PHONY: db-up
 .PHONY: db-url
 .PHONY: demo-guard
+.PHONY: demo-health
 .PHONY: demo-issue
 .PHONY: demo-operate
 .PHONY: demo-redeem
@@ -138,6 +139,10 @@ demo-operate: demo-guard db-reset ## S34 demo on a FRESH local database against 
 
 demo-redeem: demo-guard db-reset ## S33 demo on a FRESH local database against the mock Qrypt (resets the database): issue, redeem, trace
 	$(UV) python scripts/demo_redeem.py
+
+demo-health: demo-guard db-reset ## S35 demo on a FRESH local database against the mock Qrypt (resets the database): health and metrics while the server runs, stops and restarts (~1 min)
+	@mkdir -p logs
+	$(UV) python scripts/demo_health.py
 
 mcp-list: ## list the MCP tools over stdio
 	@rm -f logs/server.log

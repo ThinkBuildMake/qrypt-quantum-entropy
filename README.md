@@ -7,6 +7,7 @@ meter, Qrypt source and audit; the remaining stubs are listed in `docs/STUBS.md`
 make install        # uv, Python 3.14, locked deps
 make db-up migrate  # Postgres: Docker Compose (18) if available, else a per-worktree database
 make demo-issue     # the whole issue flow on a fresh local database against the mock Qrypt (resets the database)
+make demo-health    # health and metrics while the MCP server runs, stops and restarts (resets the database, mock Qrypt)
 make mock-qrypt     # the mock Qrypt on :8099 (point QRYPT_BASE_URL at http://127.0.0.1:8099; docs/DEPLOY.md)
 CLIENT_KEY=<key from make seed> make mcp-list   # the three tools over stdio;  docs/mcp-client.json is the Inspector snippet
 make report         # nine empty metric panels

@@ -17,7 +17,6 @@ from qrypt_entropy.errors import BudgetExhausted, Misconfigured, PoolStarved, Te
 from qrypt_entropy.logs import get_logger
 from qrypt_entropy.models import Batch, BatchSlice, PoolStatus, Taken
 from qrypt_entropy.service import meter
-from qrypt_entropy.stubs import stub
 from qrypt_entropy.upstream import source
 
 log = get_logger("qrypt_entropy.pool")
@@ -290,6 +289,5 @@ async def take(n: int) -> Taken:
     return await get_pool().take(n)
 
 
-@stub("S35")
 def status() -> PoolStatus:
-    return PoolStatus(65536, 32768, 131072, "ok", None)
+    return get_pool().status()
