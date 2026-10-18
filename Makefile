@@ -28,7 +28,7 @@ GATE_P95_MS ?= 50
 export GATE_P95_MS
 
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mcp-list mcp-call report sample-metrics test lint gate \
-        test-db-restart check-imports check-language secret-scan run-http config-show check-env
+        test-db-restart backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -93,6 +93,13 @@ report: ## print the nine metrics panels: make report [LOG=calls.log] [SNAPSHOTS
 
 sample-metrics: ## scrape /metrics into snaps.json: make sample-metrics SECONDS=12 INTERVAL=5 [METRICS_URL= ADMIN_KEY= SNAPSHOTS=]
 	$(UV) python -m qrypt_entropy.transport.metrics_sampler
+
+BACKUP_DIR ?= backups
+backup: ## daily backup: pg_dump as the backup role, encrypted with age; needs BACKUP_URL and BACKUP_AGE_RECIPIENT (docs/BACKUP.md)
+	$(UV) python scripts/backup.py "$(BACKUP_DIR)"
+
+restore-drill: ## restore the newest backup into a fresh Postgres and re-run the migrations; needs AGE_IDENTITY (docs/BACKUP.md)
+	$(UV) python scripts/restore_drill.py
 
 config-show: ## print the effective settings, secrets redacted
 	@$(UV) python scripts/config_show.py

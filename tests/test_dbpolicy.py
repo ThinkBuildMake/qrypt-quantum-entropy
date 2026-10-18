@@ -164,6 +164,7 @@ def test_ac9_grants_match_the_architecture_table(db):
         for privilege, columns in grants.items()
         for column in (cols[table] if columns is None else columns)
     }
+    expected.add(("backup", "alembic_version", "version_num", "SELECT"))  # S31: pg_dump needs it, see DEVIATIONS 15
     assert actual - expected == set()
     assert expected - actual == set()
     assert table_level == set()

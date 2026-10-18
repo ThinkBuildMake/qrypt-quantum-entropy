@@ -10,6 +10,7 @@ PEPPER=local-dev-pepper make mcp-list  # the three tools over stdio;  docs/mcp-c
 make mcp-call TOOL=get_random_bytes ARGS='{"length":8,"encoding":"hex"}'
 make report         # nine empty metric panels
 make gate           # lint, import direction, one language, secret scan, tests + coverage + matrix + fuzz + p95
+make backup / make restore-drill  # daily encrypted pg_dump and its restore drill: docs/BACKUP.md
 ```
 
 Layout (nothing imports a layer above it): `src/qrypt_entropy/` — `transport/` (MCP tools, HTTP routes, report CLI) ->

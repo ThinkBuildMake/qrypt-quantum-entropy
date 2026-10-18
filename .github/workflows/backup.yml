@@ -1,0 +1,37 @@
+name: backup
+# Daily encrypted dump of the production database (RL-7). The repository is public: the dump is encrypted with the
+# public key in backup/age-recipient.txt before it leaves the job, and the private key stays offline.
+# Secret: BACKUP_URL, the connection string of the read-only `backup` role. Nothing here prints it or the dump.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install pg_dump 18 and age
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -sSfo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          printf 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' "$VERSION_CODENAME" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-18 age
+      - run: uv sync --frozen
+      - name: Dump and encrypt
+        env:
+          BACKUP_URL: ${{ secrets.BACKUP_URL }}
+        run: make backup
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qrypt-backup
+          path: backups/*.dump.age
+          retention-days: 30
+          if-no-files-found: error
