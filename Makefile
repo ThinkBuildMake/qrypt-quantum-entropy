@@ -28,7 +28,7 @@ GATE_P95_MS ?= 50
 export GATE_P95_MS
 
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mcp-list mcp-call report sample-metrics test lint gate \
-        test-db-restart backup restore-drill check-imports check-language secret-scan run-http config-show check-env
+        test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -87,6 +87,9 @@ mcp-call: db-up migrate ## call a tool: make mcp-call TOOL=get_random_bytes ARGS
 
 run-http: ## serve the stub HTTP service locally on :8000
 	$(UV) uvicorn qrypt_entropy.transport.http_app:app --port 8000
+
+trace: ## print the provenance of one issuance: make trace REF=<uuid>
+	@$(UV) python scripts/trace.py "$(REF)"
 
 report: ## print the nine metrics panels: make report [LOG=calls.log] [SNAPSHOTS=snaps.json]
 	$(UV) python -m qrypt_entropy.transport.report_cli

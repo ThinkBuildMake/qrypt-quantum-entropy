@@ -30,6 +30,21 @@ def url_for(dbname: str) -> str:
     return make_url(base_url()).set(database=dbname).render_as_string(hide_password=False)
 
 
+def seed_issuance(ref: str) -> None:
+    """An issuance row (by the stub client, drawn from the stub batch) for tests that trace a fixed reference."""
+    with psycopg.connect(base_url()) as conn:
+        conn.execute(
+            "INSERT INTO issuances (id, client_id, tool, bytes_consumed) "
+            "VALUES (%s, '00000000-0000-4000-8000-0000000000c1', 'get_random_bytes', 8) ON CONFLICT DO NOTHING",
+            (ref,),
+        )
+        conn.execute(
+            "INSERT INTO issuance_batches (issuance_id, batch_id, byte_offset, byte_count) "
+            "VALUES (%s, '00000000-0000-4000-8000-0000000000b1', 0, 8) ON CONFLICT DO NOTHING",
+            (ref,),
+        )
+
+
 @pytest.fixture
 def empty_db():
     """A fresh empty database on the server DATABASE_URL points at; dropped afterwards."""

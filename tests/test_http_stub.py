@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from qrypt_entropy.transport.http_app import app
+from tests.conftest import seed_issuance
 
 CLIENT = {"Authorization": "Bearer stub-client-key"}
 ADMIN = {"Authorization": "Bearer stub-admin-key"}
@@ -20,6 +21,7 @@ def test_ac3_health_has_contract_fields(http):
 
 
 def test_ac5_usage_and_issuance_shapes(http):
+    seed_issuance(REF)
     usage = http.get("/admin/usage", headers=ADMIN).json()
     assert set(usage) == {"budget", "perClient"}
     assert set(usage["budget"]) == {"capKib", "usedKib"}

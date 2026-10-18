@@ -17,7 +17,6 @@ Each module lives in one file, so module stories do not collide.
 | `qrypt_entropy.service.pool` | `stop` | S12 | S20 |
 | `qrypt_entropy.service.issuance` | `random_int` | S14 | S20 |
 | `qrypt_entropy.service.issuance` | `generate_token` | S15 | S20 |
-| `qrypt_entropy.service.issuance` | `get_issuance` | S23 | S33 |
 | `qrypt_entropy.service.tokens` | `redeem` | S21 (S22 rate limit) | S33 |
 | `qrypt_entropy.service.issuance` | `call_stats` | S28 | S35 |
 | `qrypt_entropy.service.status` (`service/status.py`) | `get_health` | S29 | S35 |
@@ -74,3 +73,4 @@ Needs `TOKEN_PEPPER` (or `PEPPER`) when an owner is given. Still on the stub `po
 
 S30 (done): `status.get_metrics` is real and `GET /metrics` (admin key) answers from the most recently reporting `server_status` row plus `budget.used_kib`. Series: `qrypt_pool_level_bytes`, `qrypt_upstream_requests_last_10s`, `qrypt_process_start_time_seconds` (epoch seconds from the snapshot's `startedAt`, a number or an ISO-8601 string), `qrypt_calls_total{tool}`, `qrypt_errors_total{code}`, `qrypt_tool_call_duration_ms{quantile="0.5|0.95|0.99"}` (live series); `qrypt_budget_used_kib` and `qrypt_report_age_seconds` (always; NaN when no row exists). A row older than 15 s (database clock) drops the live series. S28 must write `MetricsSnapshot` keys exactly as in ARCHITECTURE. Gate cases in `tests/gate/test_metrics_gate.py` (`metrics-parse`, `metrics-values`).
 S31 (done): no stubs. Backup and restore are real: `scripts/backup.py` (`make backup`), `scripts/restore_drill.py` (`make restore-drill`), `.github/workflows/backup.yml`; see `docs/BACKUP.md`. The workflow, the real key pair and the production database are not exercised (E1/E4; S46).
+S23 (done): `Issuance.get_issuance` is real (`GET /admin/issuances/{reference}`): one read-only transaction over `issuances`, `credentials`, `issuance_batches`, `batches` and `tokens`; it never selects the token hash or any value. Until S20 and S33 the writers are stubs, so the rows it reads come from S13 (bytes) and from tests; token rows appear when S15 lands. `make trace REF=<uuid>` prints the same body from the service (needs `DATABASE_URL`).

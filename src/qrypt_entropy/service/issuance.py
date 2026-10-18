@@ -1,7 +1,7 @@
 """Issuance: the tools and the audit record. Owns `issuances`, `issuance_batches`.
 
-get_random_bytes, random_int (S14) and generate_token (S15) are real, with the audit record. Still S01 stubs:
-S23 (getIssuance); wired to the transports by S20 and S33.
+get_random_bytes, random_int (S14) and generate_token (S15) are real, with the audit record, and so is getIssuance
+(S23). Wired to the transports by S20 and S33.
 """
 
 import asyncio
@@ -10,17 +10,15 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 
 import psycopg
 
 from qrypt_entropy.config import get_settings
-from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable
+from qrypt_entropy.errors import AppError, InvalidArgument, NotFound, TemporarilyUnavailable
 from qrypt_entropy.logs import get_logger
 from qrypt_entropy.models import BatchSlice, IssuedValue, Principal, ToolMetadata
 from qrypt_entropy.service import pool, tokens
 from qrypt_entropy.storage.db import connection
-from qrypt_entropy.stubs import stub
 
 log = get_logger("qrypt_entropy.issuance")
 SAFE_INT = 2**53 - 1
@@ -194,25 +192,54 @@ def _store(owner: str | None, kind: str, value: str, expiry: int):
     return inside
 
 
-@stub("S23")
 def get_issuance(reference: str) -> dict:
-    now = datetime.now(UTC).isoformat()
+    """Provenance of one issuance: who, which tool, how many bytes, which batches, and the token summary (FR-4).
+
+    Reads only; never returns a value or a token hash.
+    """
+    with connection() as conn:
+        head = conn.execute(
+            "SELECT i.tool, i.bytes_consumed, i.created_at, c.id, c.name FROM issuances i "
+            "JOIN credentials c ON c.id = i.client_id WHERE i.id = %s",
+            (reference,),
+        ).fetchone()
+        if head is None:
+            raise NotFound("no such issuance")
+        batches = conn.execute(
+            "SELECT ib.batch_id, b.source, ib.byte_offset, ib.byte_count, b.requested_at FROM issuance_batches ib "
+            "JOIN batches b ON b.id = ib.batch_id WHERE ib.issuance_id = %s "
+            "ORDER BY b.requested_at, ib.batch_id, ib.byte_offset",
+            (reference,),
+        ).fetchall()
+        token = conn.execute(
+            "SELECT owner, kind, expires_at, used_at, is_seed FROM tokens WHERE issuance_id = %s", (reference,)
+        ).fetchone()
+    tool, consumed, created_at, client_id, client_name = head
     return {
         "reference": reference,
-        "client": {"id": "00000000-0000-4000-8000-0000000000c1", "name": "stub-client"},
-        "tool": "get_random_bytes",
-        "bytesConsumed": 8,
-        "createdAt": now,
+        "client": {"id": str(client_id), "name": client_name},
+        "tool": tool,
+        "bytesConsumed": consumed,
+        "createdAt": created_at.isoformat(),
         "batches": [
             {
-                "batchId": pool.STUB_BATCH_ID,
-                "source": "stub",
-                "byteOffset": 0,
-                "byteCount": 8,
-                "requestedAt": now,
+                "batchId": str(batch_id),
+                "source": source,
+                "byteOffset": offset,
+                "byteCount": count,
+                "requestedAt": requested_at.isoformat(),
             }
+            for batch_id, source, offset, count, requested_at in batches
         ],
-        "token": None,
+        "token": None
+        if token is None
+        else {
+            "owner": token[0],
+            "kind": token[1],
+            "expiresAt": token[2].isoformat(),
+            "usedAt": token[3].isoformat() if token[3] else None,
+            "isSeed": token[4],
+        },
     }
 
 

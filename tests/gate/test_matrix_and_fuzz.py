@@ -19,7 +19,7 @@ from mcp.client import Client
 from qrypt_entropy.service.access import STUB_ADMIN_KEY, STUB_CLIENT_KEY, create_client
 from qrypt_entropy.transport.http_app import app
 from qrypt_entropy.transport.mcp_server import TOOL_ROLES, build_server
-from tests.conftest import GATE_STATS, base_url
+from tests.conftest import GATE_STATS, base_url, seed_issuance
 
 
 @pytest.fixture(autouse=True)
@@ -90,6 +90,7 @@ async def test_ac10_authorization_matrix_over_every_tool_and_route():
     http = TestClient(app, raise_server_exceptions=False)
     routes = list(http_routes())
     assert len(routes) >= 8
+    seed_issuance(REF)
     existing_client = create_client(f"matrix-{uuid.uuid4().hex}")["client"]["id"]
     for route, roles in routes:
         method = sorted(route.methods)[0]
