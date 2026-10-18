@@ -1,7 +1,7 @@
 """Issuance: the tools and the audit record. Owns `issuances`, `issuance_batches`.
 
 get_random_bytes, random_int (S14) and generate_token (S15) are real, with the audit record, and so is getIssuance
-(S23). Wired to the transports by S20 and S33.
+(S23). The bytes come from the process-wide Pool (S20); getIssuance is wired by S33.
 """
 
 import asyncio

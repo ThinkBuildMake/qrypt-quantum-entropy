@@ -3,11 +3,17 @@
 A real local HTTP server so timeouts and dropped connections behave like the network. It answers in Qrypt's shape,
 enforces 30 requests per 10 s (429), checks size 1 to 512 (400), adds latency, injects a fault from a queue, and
 records every request. Entropy here is deterministic and synthetic.
+
+Also runnable on its own (`make mock-qrypt`, S20) so QRYPT_BASE_URL can point at it. While running,
+`GET /__mock/status?code=503` makes every later request answer that status (`code=200` restores normal service);
+control requests are not logged.
 """
 
+import argparse
 import asyncio
 import base64
 import json
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,22 +34,30 @@ class Logged:
 
 
 class MockQrypt:
-    def __init__(self, token: str = "mock-token-0123456789", clock: Callable[[], float] = time.monotonic) -> None:  # noqa: S107
+    def __init__(
+        self,
+        token: str = "mock-token-0123456789",  # noqa: S107
+        clock: Callable[[], float] = time.monotonic,
+        port: int = 0,
+        enforce_limit: bool = True,
+    ) -> None:
         self.token = token
+        self.enforce_limit = enforce_limit  # a mock shared by many test processes cannot honour the per-client limit
+        self.sticky: int | None = None  # every request answers this status while it is set
         self.clock = clock  # a test may scale time; the 10 s window and the log use it
         self.log: list[Logged] = []
         self.faults: list[int | str] = []  # consumed one per request: a status code or "drop"
         self.delay_s = 0.0
         self.override: Callable[[int], int | None] | None = None  # request index -> status in place of a 200
         self._server: asyncio.Server | None = None
-        self.port = 0
+        self.port = port
 
     @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
 
     async def __aenter__(self) -> MockQrypt:
-        self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
+        self._server = await asyncio.start_server(self._handle, "127.0.0.1", self.port)
         self.port = self._server.sockets[0].getsockname()[1]
         return self
 
@@ -57,8 +71,10 @@ class MockQrypt:
     def _decide(self, size: str | None, auth: str | None) -> int | str:
         if self.faults:
             return self.faults.pop(0)
+        if self.sticky:
+            return self.sticky
         now = self.clock()
-        if sum(1 for r in self.log[:-1] if now - r.at < WINDOW_S) >= LIMIT:
+        if self.enforce_limit and sum(1 for r in self.log[:-1] if now - r.at < WINDOW_S) >= LIMIT:
             return 429
         if auth != f"Bearer {self.token}":
             return 401
@@ -75,6 +91,12 @@ class MockQrypt:
             parts = urlsplit(target)
             size = (parse_qs(parts.query).get("size") or [None])[0]
             auth = headers.get("authorization")
+            if parts.path == "/__mock/status":
+                code = (parse_qs(parts.query).get("code") or ["200"])[0]
+                self.sticky = int(code) if code.isdigit() and int(code) != 200 else None
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                await writer.drain()
+                return
             entry = Logged(self.clock(), parts.path, size, auth, None)
             index = len(self.log)
             self.log.append(entry)
@@ -100,3 +122,20 @@ class MockQrypt:
             pass
         finally:
             writer.close()
+
+
+async def serve(port: int, token: str) -> None:
+    async with MockQrypt(token, port=port):
+        print(f"mock Qrypt listening on http://127.0.0.1:{port} (token {token})", flush=True)
+        await asyncio.Event().wait()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Local mock of the Qrypt entropy service")
+    parser.add_argument("--port", type=int, default=8099)
+    parser.add_argument("--token", default=os.environ.get("MOCK_QRYPT_TOKEN", "mock-token-0123456789"))
+    args = parser.parse_args()
+    try:
+        asyncio.run(serve(args.port, args.token))
+    except KeyboardInterrupt:
+        pass

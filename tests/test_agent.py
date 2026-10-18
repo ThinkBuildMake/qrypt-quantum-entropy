@@ -11,20 +11,18 @@ from qrypt_entropy.agent.mcp_tools import McpTools, server_params
 from qrypt_entropy.agent.openrouter import OpenRouterModel
 from qrypt_entropy.agent.scripted import ScriptedModel, StubTools, call_step
 from qrypt_entropy.agent.settings import AgentSettings
-from tests.conftest import server_env
+from tests.conftest import client_key, server_env
 
 
 async def test_ac3_agent_tools_lists_the_three_tools_and_nothing_that_reads_stored_data(tmp_path):
-    async with McpTools(
-        server_params("stub-client-key", {"LOG_FILE": str(tmp_path / "s.log"), **server_env()})
-    ) as tools:
+    async with McpTools(server_params(client_key(), {"LOG_FILE": str(tmp_path / "s.log"), **server_env()})) as tools:
         names = {s["function"]["name"] for s in tools.specs()}
     assert names == {"get_random_bytes", "random_int", "generate_token"}
 
 
 async def test_real_server_call_returns_value_and_metadata_for_the_agent(tmp_path):
     config = {"LOG_FILE": str(tmp_path / "s.log"), **server_env()}
-    async with McpTools(server_params("stub-client-key", config)) as tools:
+    async with McpTools(server_params(client_key(), config)) as tools:
         result = await tools.call("random_int", {"min": 1, "max": 6})
     assert 1 <= result.value <= 6
     assert result.error is None and "reference" in result.metadata
@@ -32,7 +30,7 @@ async def test_real_server_call_returns_value_and_metadata_for_the_agent(tmp_pat
 
 async def test_tool_error_reaches_the_model_without_a_value(tmp_path):
     config = {"LOG_FILE": str(tmp_path / "s.log"), **server_env()}
-    async with McpTools(server_params("stub-client-key", config)) as tools:
+    async with McpTools(server_params(client_key(), config)) as tools:
         result = await tools.call("random_int", {"min": 5, "max": 1})
     assert result.value is None and result.error
 

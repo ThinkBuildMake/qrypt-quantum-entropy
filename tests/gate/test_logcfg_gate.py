@@ -19,11 +19,9 @@ from qrypt_entropy.errors import HTTP_STATUS, AppError
 from qrypt_entropy.storage.db import open_pool
 from qrypt_entropy.transport.http_app import app
 from qrypt_entropy.transport.mcp_server import build_server
-from tests.conftest import server_env
+from tests.conftest import client_id, client_key, server_env
 from tools import check_env
 
-CLIENT_KEY = "stub-client-key"
-CLIENT_ID = "00000000-0000-4000-8000-0000000000c1"
 BASE_ENV = {"PATH": os.environ["PATH"], "LOG_FILE": "", **server_env()}
 
 
@@ -32,8 +30,8 @@ def run(args, env):
 
 
 def mcp_raw(env=None):
-    """Start the stub MCP server, list its tools and call one; stdout and stderr stay separate."""
-    return run(["scripts/mcp_client.py", "raw"], {"MCP_CLIENT_KEY": CLIENT_KEY, **(env or {})})
+    """Start the MCP server, list its tools and call one; stdout and stderr stay separate."""
+    return run(["scripts/mcp_client.py", "raw"], {"MCP_CLIENT_KEY": client_key(), **(env or {})})
 
 
 def http_session():
@@ -41,7 +39,8 @@ def http_session():
         "from fastapi.testclient import TestClient\n"
         "from qrypt_entropy.transport.http_app import app\n"
         "c = TestClient(app)\n"
-        f"c.post('/verify', headers={{'Authorization': 'Bearer {CLIENT_KEY}'}}, json={{'owner': 'o', 'value': '1'}})\n"
+        f"h = {{'Authorization': 'Bearer {client_key()}'}}\n"
+        "c.post('/verify', headers=h, json={'owner': 'o', 'value': '1'})\n"
         "c.get('/health')\n"
         "from qrypt_entropy.service.access import close_pools\nclose_pools()\n"
     )
@@ -65,8 +64,8 @@ def test_logs_carry_client_id():
     http, mcp = http_session(), mcp_raw()
     for out in (http.stderr, mcp.stderr):
         with_id = [line for line in lines(out) if line.get("client_id")]
-        assert with_id and all(line["client_id"] == CLIENT_ID for line in with_id)
-        assert CLIENT_KEY not in out
+        assert with_id and all(line["client_id"] == client_id() for line in with_id)
+        assert client_key() not in out
 
 
 def test_mcp_stdout_is_protocol_only():
@@ -124,7 +123,7 @@ async def test_error_codes_http_and_tool(code, raising_routes):
     r = TestClient(app).get(f"/__test/raise/{code}")
     assert r.json() == {"error": code, "message": "refused"}
     assert r.status_code == HTTP_STATUS[code]
-    server = build_server(lambda: CLIENT_KEY)
+    server = build_server(lambda: client_key(), run_pool=False)
     server.tool(name="raises")(lambda: _raise(code))
     async with Client(server) as client:
         result = await client.call_tool("raises", {})

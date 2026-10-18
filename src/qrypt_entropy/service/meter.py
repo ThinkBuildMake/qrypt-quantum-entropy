@@ -58,15 +58,30 @@ def reserve(wanted_kib: int, purpose: str, source: str, *, url: str | None = Non
 
 
 def mark_batch(batch_id: str, outcome: str, *, url: str | None = None) -> None:
-    """Record received or failed on a batch. Never changes used_kib."""
+    """Record received or failed on a batch that is still `requested`; the first mark stands (racing marks cannot
+    flip it). Never changes used_kib."""
     if outcome not in ("received", "failed"):
         raise InvalidArgument("outcome must be received or failed")
     with db.connection(url) as conn:
         done = conn.execute(
-            "UPDATE batches SET outcome = %s, settled_at = now() WHERE id = %s", (outcome, batch_id)
+            "UPDATE batches SET outcome = %s, settled_at = now() WHERE id = %s AND outcome = 'requested'",
+            (outcome, batch_id),
         ).rowcount
-    if not done:
-        raise NotFound("no such batch")
+        if not done and conn.execute("SELECT 1 FROM batches WHERE id = %s", (batch_id,)).fetchone() is None:
+            raise NotFound("no such batch")
+
+
+STALE_AFTER_SECONDS = 600  # longer than any fetch can take (about 2 minutes of 429 backoff)
+
+
+def settle_stale(*, url: str | None = None) -> int:
+    """Mark upstream batches a stopped process left `requested` as failed (one UPDATE). Returns how many."""
+    with db.connection(url) as conn:
+        return conn.execute(
+            "UPDATE batches SET outcome = 'failed', settled_at = now() WHERE outcome = 'requested'"
+            " AND purpose IN ('startup_check', 'refill') AND requested_at < now() - make_interval(secs => %s)",
+            (STALE_AFTER_SECONDS,),
+        ).rowcount
 
 
 def get_usage(*, url: str | None = None) -> dict:

@@ -116,6 +116,7 @@ async def test_rate_ceiling_100():
 def test_token_setting_accepts_both_names(monkeypatch):
     from qrypt_entropy.config import Settings
 
+    monkeypatch.delenv("QRYPT_API_KEY", raising=False)  # the suite points it at its mock
     monkeypatch.setenv("QRYPT_API_TOKEN", "old-name")
     assert Settings(_env_file=None).qrypt_api_token.get_secret_value() == "old-name"
     monkeypatch.setenv("QRYPT_API_KEY", "new-name")

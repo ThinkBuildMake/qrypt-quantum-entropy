@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 import psycopg
 import pytest
 
-from qrypt_entropy.errors import BudgetExhausted
+from qrypt_entropy.errors import BudgetExhausted, NotFound
 from qrypt_entropy.service import meter
 from tests.test_migrations import migrate
 
@@ -150,3 +150,18 @@ def test_meter_survives_restart(db):
         [sys.executable, "-c", code], env={**os.environ, "DATABASE_URL": db}, capture_output=True, text=True
     )
     assert int(out.stdout.strip()) >= 64
+
+
+def test_first_mark_stands_and_stale_requested_batches_settle(db):
+    first = meter.reserve(1, "refill", "qrypt", url=db)
+    meter.mark_batch(first.batch_id, "received", url=db)
+    meter.mark_batch(first.batch_id, "failed", url=db)  # a racing mark cannot flip the label
+    with pytest.raises(NotFound):
+        meter.mark_batch("00000000-0000-4000-8000-000000000001", "failed", url=db)
+    stale = meter.reserve(1, "refill", "qrypt", url=db)
+    fresh = meter.reserve(1, "refill", "qrypt", url=db)
+    with psycopg.connect(db) as conn:
+        conn.execute("UPDATE batches SET requested_at = now() - interval '1 hour' WHERE id = %s", (stale.batch_id,))
+    assert meter.settle_stale(url=db) == 1
+    got = dict(psycopg.connect(db).execute("SELECT id::text, outcome FROM batches").fetchall())
+    assert got == {first.batch_id: "received", stale.batch_id: "failed", fresh.batch_id: "requested"}

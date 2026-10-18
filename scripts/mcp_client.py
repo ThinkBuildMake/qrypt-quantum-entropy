@@ -23,7 +23,15 @@ def server_params() -> StdioServerParameters:
         "LOG_FILE": os.environ.get("LOG_FILE", "logs/server.log"),
         **{
             k: os.environ[k]
-            for k in ("DATABASE_URL", "KEY_HASH_SECRET", "PEPPER", "TOKEN_PEPPER", "APP_PROFILE")
+            for k in (
+                "DATABASE_URL",
+                "KEY_HASH_SECRET",
+                "PEPPER",
+                "TOKEN_PEPPER",
+                "APP_PROFILE",
+                "QRYPT_API_KEY",
+                "QRYPT_BASE_URL",
+            )  # fmt: skip
             if k in os.environ
         },
     }

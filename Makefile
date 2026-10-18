@@ -27,7 +27,7 @@ export DATABASE_URL
 GATE_P95_MS ?= 50
 export GATE_P95_MS
 
-.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mcp-list mcp-call report sample-metrics test lint gate \
+.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
         agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
@@ -78,14 +78,27 @@ seed: ## create 1 admin, 2 clients and 3 seed tokens (keys printed once; needs K
 seed-list-names: ## list the seeded credential names and seed-token owners
 	$(UV) python scripts/seed.py list-names
 
-mcp-list: ## list the MCP tools of the stub server over stdio
+mock-qrypt: ## serve the committed mock Qrypt on 127.0.0.1:$(MOCK_PORT) (default 8099); QRYPT_BASE_URL=http://127.0.0.1:8099 QRYPT_API_KEY=$(MOCK_QRYPT_TOKEN)
+	$(UV) python -m tests.mock_qrypt --port $(or $(MOCK_PORT),8099)
+
+demo-guard:
+ifeq ($(DB_MODE),external)
+ifneq ($(CONFIRM_RESET),1)
+	@echo "refusing: demo-issue RESETS the database in DATABASE_URL. Unset DATABASE_URL, or run with CONFIRM_RESET=1 if you mean it." >&2; exit 1
+endif
+endif
+
+demo-issue: demo-guard db-reset ## S20 demo on a FRESH local database against the mock Qrypt (resets the database), prints the evidence
+	$(UV) python scripts/demo_issue.py
+
+mcp-list: ## list the MCP tools over stdio
 	@rm -f logs/server.log
 	$(UV) python scripts/mcp_client.py list
 
-mcp-call: db-up migrate ## call a tool: make mcp-call TOOL=get_random_bytes ARGS='{"length":8,"encoding":"hex"}'
-	$(UV) python scripts/seed_stubs.py && $(UV) python scripts/mcp_client.py call "$(TOOL)" '$(ARGS)'
+mcp-call: db-up migrate ## call a tool (needs CLIENT_KEY from make seed, and Qrypt or make mock-qrypt): make mcp-call TOOL=get_random_bytes ARGS='{"length":8,"encoding":"hex"}'
+	$(UV) python scripts/mcp_client.py call "$(TOOL)" '$(ARGS)'
 
-run-http: ## serve the stub HTTP service locally on :8000
+run-http: ## serve the HTTP service locally on :8000
 	$(UV) uvicorn qrypt_entropy.transport.http_app:app --port 8000
 
 trace: ## print the provenance of one issuance: make trace REF=<uuid>

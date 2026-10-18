@@ -15,11 +15,12 @@ from qrypt_entropy.config import get_settings
 from qrypt_entropy.errors import BudgetExhausted, InvalidArgument, PoolStarved, TemporarilyUnavailable
 from qrypt_entropy.models import BatchSlice, Principal, Taken
 from qrypt_entropy.service import issuance, meter, pool
-from qrypt_entropy.service.access import STUB_CLIENT_KEY, hash_key
+from qrypt_entropy.service.access import hash_key
 from qrypt_entropy.service.pool import Pool
 from qrypt_entropy.storage.db import close_pools as close_db_pools
 from qrypt_entropy.transport.mcp_server import build_server
 
+GATE_KEY = "bytes-gate-client-key"  # a test-only key, hashed into the fresh database below
 CLIENT = str(uuid.uuid4())
 PRINCIPAL = Principal(CLIENT, "client", "agent-1")
 
@@ -33,8 +34,8 @@ def bdb(db):
             (CLIENT, b"k" * 32),
         )
         conn.execute(
-            "INSERT INTO credentials (id, name, role, key_hash) VALUES (%s, 'stub-client', 'client', %s)",
-            (str(uuid.uuid4()), hash_key(STUB_CLIENT_KEY)),
+            "INSERT INTO credentials (id, name, role, key_hash) VALUES (%s, 'gate-client', 'client', %s)",
+            (str(uuid.uuid4()), hash_key(GATE_KEY)),
         )
     issuance.reset_call_stats()
     yield db
@@ -51,9 +52,9 @@ def seed_batch(url, kib=1) -> str:
 
 @pytest.fixture
 def stub_pool(bdb, monkeypatch):
-    """A real Pool wired in place of the module-level take; `serve` adds bytes from a freshly seeded batch."""
+    """A real Pool installed as the process-wide one, with no refill; `serve` adds bytes from a freshly seeded batch."""
     p = Pool(low_mark_bytes=0, high_mark_bytes=0)
-    monkeypatch.setattr(pool, "take", p.take)
+    pool.use_pool(p)
     p.serve = lambda data: (batch := seed_batch(bdb), p.add(batch, data))[0]
     return p
 
@@ -137,7 +138,7 @@ async def test_bytes_audit_fault_releases_no_value(bdb, stub_pool):
 async def test_bytes_log_and_stats(bdb, stub_pool, caplog):
     stub_pool.serve(bytes(range(30)))
     caplog.set_level(logging.INFO)
-    async with Client(build_server(lambda: "stub-client-key")) as client:
+    async with Client(build_server(lambda: GATE_KEY, run_pool=False)) as client:
         results = [await client.call_tool("get_random_bytes", {"length": 4, "encoding": "hex"}) for _ in range(3)]
         bad = await client.call_tool("get_random_bytes", {"length": 0, "encoding": "hex"})
     assert [r.is_error for r in results] == [False] * 3 and bad.is_error
@@ -177,7 +178,7 @@ async def test_bytes_schema_rejection_has_duration_and_is_counted(bdb, stub_pool
     stub_pool.serve(bytes(8))
     insert_ok = {"length": 4, "encoding": "hex"}
     caplog.set_level(logging.INFO)
-    async with Client(build_server(lambda: STUB_CLIENT_KEY)) as client:
+    async with Client(build_server(lambda: GATE_KEY, run_pool=False)) as client:
         ok = await client.call_tool("get_random_bytes", insert_ok)
         bad = await client.call_tool("get_random_bytes", {"length": 4, "encoding": "binary"})
     assert not ok.is_error and bad.is_error

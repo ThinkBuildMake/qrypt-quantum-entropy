@@ -4,17 +4,17 @@ import sys
 from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters
 
-from tests.conftest import server_env
+from tests.conftest import client_key, server_env
 
 TOOLS = {"get_random_bytes", "random_int", "generate_token"}
 
 
-def params(tmp_path, key="stub-client-key"):
-    env = {"MCP_CLIENT_KEY": key, "LOG_FILE": str(tmp_path / "server.log"), **server_env()}
+def params(tmp_path):
+    env = {"MCP_CLIENT_KEY": client_key(), "LOG_FILE": str(tmp_path / "server.log"), **server_env()}
     return StdioServerParameters(command=sys.executable, args=["-m", "qrypt_entropy.transport.mcp_server"], env=env)
 
 
-async def test_ac1_stub_server_lists_three_tools_and_saves_log(tmp_path):
+async def test_ac1_server_lists_three_tools_and_saves_log(tmp_path):
     async with Client(params(tmp_path)) as client:
         tools = (await client.list_tools()).tools
     assert {t.name for t in tools} == TOOLS
@@ -30,7 +30,8 @@ async def test_ac1_connection_snippet_matches_the_server_command():
     snippet = json.load(open("docs/mcp-client.json"))["mcpServers"]["qrypt-entropy"]
     assert snippet["command"] == "uv"
     assert snippet["args"][-2:] == ["-m", "qrypt_entropy.transport.mcp_server"]
-    assert snippet["env"]["MCP_CLIENT_KEY"] == "stub-client-key"
+    assert snippet["env"]["MCP_CLIENT_KEY"].startswith("REPLACE_WITH")  # the key `make seed` prints for billing-agent
+    assert {"DATABASE_URL", "KEY_HASH_SECRET", "PEPPER", "QRYPT_API_KEY"} <= set(snippet["env"])
 
 
 async def test_ac2_get_random_bytes_returns_contract_shape(tmp_path):

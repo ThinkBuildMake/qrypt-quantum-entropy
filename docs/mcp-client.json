@@ -4,8 +4,12 @@
       "command": "uv",
       "args": ["run", "--directory", "/ABSOLUTE/PATH/TO/qrypt-quantum-entropy", "python", "-m", "qrypt_entropy.transport.mcp_server"],
       "env": {
-        "MCP_CLIENT_KEY": "stub-client-key",
-        "PEPPER": "REPLACE_WITH_YOUR_PEPPER"
+        "MCP_CLIENT_KEY": "REPLACE_WITH_THE_BILLING_AGENT_KEY_PRINTED_BY_MAKE_SEED",
+        "DATABASE_URL": "REPLACE_WITH_YOUR_DATABASE_URL",
+        "KEY_HASH_SECRET": "REPLACE_WITH_YOUR_KEY_HASH_SECRET",
+        "PEPPER": "REPLACE_WITH_YOUR_PEPPER",
+        "QRYPT_API_KEY": "REPLACE_WITH_YOUR_QRYPT_TOKEN_OR_THE_MOCKS",
+        "QRYPT_BASE_URL": "http://127.0.0.1:8099"
       }
     }
   }

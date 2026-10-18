@@ -23,10 +23,6 @@ from qrypt_entropy.storage.db import open_pool
 
 log = get_logger("access")
 
-# Fixed test keys. They authenticate only if a credential row hashes to them (tests/conftest.py inserts those rows).
-STUB_CLIENT_KEY = "stub-client-key"
-STUB_ADMIN_KEY = "stub-admin-key"
-
 ROLES = ("admin", "client")
 _pools: dict[str, ConnectionPool] = {}
 _pools_lock = threading.Lock()

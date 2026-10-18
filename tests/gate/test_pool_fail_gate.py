@@ -76,7 +76,7 @@ async def test_pool_gives_up_2s(stubs):
     with pytest.raises(PoolStarved) as err:
         await pool.take(200)
     assert err.value.code == "temporarily_unavailable"
-    assert 2.0 <= time.monotonic() - start <= 2.2
+    assert 1.8 <= time.monotonic() - start < 2.0  # RL-1: within 2 s
     await pool.stop()
 
 
@@ -137,8 +137,8 @@ async def test_pool_ob8_events(stubs, tmp_path):
     first, returned = events["pool_cannot_cover"], events["pool_error_returned"]
     assert returned["reason"] == "temporarily_unavailable"
     gap = datetime.fromisoformat(returned["timestamp"]) - datetime.fromisoformat(first["timestamp"])
-    assert 0 <= gap.total_seconds() <= 2.0 + 0.2  # RL-1: within 2 s (plus scheduling slack)
-    assert 1.9 <= returned["waited_s"] <= 2.2
+    assert 0 <= gap.total_seconds() < 2.0  # RL-1: within 2 s
+    assert 1.7 <= returned["waited_s"] < 2.0
 
 
 async def test_pool_serves_after_budget(stubs):

@@ -1,5 +1,5 @@
 """AC8/AC10: authorization matrix over every registered tool and route, a 1,000-input fuzz pass, and the
-stub tool-call p95 check. These run inside `make gate`."""
+tool-call p95 check. These run inside `make gate`."""
 
 import json
 import os
@@ -16,10 +16,10 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from mcp.client import Client
 
-from qrypt_entropy.service.access import STUB_ADMIN_KEY, STUB_CLIENT_KEY, create_client
+from qrypt_entropy.service.access import create_client
 from qrypt_entropy.transport.http_app import app
 from qrypt_entropy.transport.mcp_server import TOOL_ROLES, build_server
-from tests.conftest import GATE_STATS, base_url, seed_issuance
+from tests.conftest import GATE_STATS, admin_key, base_url, client_key, seed_issuance
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,10 @@ def restore_budget_cap():
         conn.execute("UPDATE budget SET cap_kib = %s", (cap,))
 
 
-CREDENTIALS = {"none": None, "client": STUB_CLIENT_KEY, "admin": STUB_ADMIN_KEY}
+def credentials():
+    return {"none": None, "client": client_key(), "admin": admin_key()}
+
+
 ROLE_OF = {"none": None, "client": "client", "admin": "admin"}
 VALID_TOOL_ARGS = {
     "get_random_bytes": {"length": 8, "encoding": "hex"},
@@ -65,7 +68,7 @@ def sample_body(route):
 
 
 async def call_tool(key, name, args):
-    async with Client(build_server(lambda: key)) as client:
+    async with Client(build_server(lambda: key, run_pool=False)) as client:
         return await client.call_tool(name, args)
 
 
@@ -75,12 +78,12 @@ def error_code(text):
 
 async def test_ac10_authorization_matrix_over_every_tool_and_route():
     cells = 0
-    server = build_server(lambda: None)
+    server = build_server(lambda: None, run_pool=False)
     async with Client(server) as client:
         registered = {t.name for t in (await client.list_tools()).tools}
     assert registered == set(TOOL_ROLES), "every registered tool needs an entry in TOOL_ROLES"
     for name in registered:
-        for who, key in CREDENTIALS.items():
+        for who, key in credentials().items():
             result = await call_tool(key, name, VALID_TOOL_ARGS[name])
             allowed = ROLE_OF[who] in TOOL_ROLES[name]
             assert (not result.is_error) == allowed, (name, who)
@@ -94,7 +97,7 @@ async def test_ac10_authorization_matrix_over_every_tool_and_route():
     existing_client = create_client(f"matrix-{uuid.uuid4().hex}")["client"]["id"]
     for route, roles in routes:
         method = sorted(route.methods)[0]
-        for who, key in CREDENTIALS.items():
+        for who, key in credentials().items():
             headers = {"Authorization": f"Bearer {key}"} if key else {}
             resp = http.request(
                 method, sample_path(route.path, existing_client), headers=headers, json=sample_body(route)
@@ -122,7 +125,7 @@ def junk(rng):
 
 async def test_ac10_fuzz_1000_inputs_cause_no_unhandled_exception_or_5xx():
     rng = random.Random(1234)
-    server = build_server(lambda: STUB_CLIENT_KEY)
+    server = build_server(lambda: client_key(), run_pool=False)
     http = TestClient(app, raise_server_exceptions=False)
     routes = [(r, sorted(r.methods)[0]) for r, _ in http_routes()]
     fields = {"get_random_bytes": ["length", "encoding"], "random_int": ["min", "max"],
@@ -143,7 +146,7 @@ async def test_ac10_fuzz_1000_inputs_cause_no_unhandled_exception_or_5xx():
             total += 1
     for _ in range(500):
         route, method = rng.choice(routes)
-        key = rng.choice([STUB_ADMIN_KEY, STUB_CLIENT_KEY, None, "".join(rng.choices(string.ascii_letters, k=8))])
+        key = rng.choice([admin_key(), client_key(), None, "".join(rng.choices(string.ascii_letters, k=8))])
         headers = {"Authorization": f"Bearer {key}"} if key else {}
         path = route.path.replace("{reference}", quote(str(junk(rng))[:30], safe="") or "x")
         path = path.replace("{client_id}", quote(str(junk(rng))[:30], safe="") or "x")
@@ -163,15 +166,15 @@ async def test_ac10_fuzz_1000_inputs_cause_no_unhandled_exception_or_5xx():
     assert total == 1000
 
 
-async def test_ac8_stub_tool_call_p95_is_under_the_threshold():
+async def test_ac8_tool_call_p95_is_under_the_threshold():
     threshold = float(os.environ.get("GATE_P95_MS", "50"))
     durations = []
-    async with Client(build_server(lambda: STUB_CLIENT_KEY)) as client:
+    async with Client(build_server(lambda: client_key())) as client:  # the real pool, started, on the mock
         for i in range(1000):
             name = list(VALID_TOOL_ARGS)[i % 3]
             started = time.perf_counter()
             await client.call_tool(name, VALID_TOOL_ARGS[name])
             durations.append((time.perf_counter() - started) * 1000)
     p95 = statistics.quantiles(durations, n=100)[94]
-    GATE_STATS["stub tool-call p95 (ms) over 1000 calls, threshold"] = f"{p95:.2f} < {threshold}"
+    GATE_STATS["tool-call p95 (ms) over 1000 calls on the mock, threshold"] = f"{p95:.2f} < {threshold}"
     assert p95 < threshold

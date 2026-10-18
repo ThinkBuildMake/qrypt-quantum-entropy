@@ -1,6 +1,6 @@
 """HTTP transport (FastAPI). Thin: authenticate, validate, call the service, map errors.
 
-S01: every route answers from the service stubs, in the contract's shapes.
+Routes authenticate with the real Access (S20); `/health` and the issuance trace still answer from stubs (S35, S33).
 """
 
 import re
@@ -61,7 +61,7 @@ async def _lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Qrypt entropy service (S01 stubs)", docs_url=None, redoc_url=None, lifespan=_lifespan)
+app = FastAPI(title="Qrypt entropy service", docs_url=None, redoc_url=None, lifespan=_lifespan)
 
 
 @app.middleware("http")

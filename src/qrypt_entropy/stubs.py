@@ -23,18 +23,3 @@ def stub(replaced_by: str) -> Callable:
         return fn
 
     return mark
-
-
-STUB_BATCH_ID = "00000000-0000-4000-8000-0000000000b1"
-
-
-def seed_stub_batch(url: str) -> None:
-    """Insert the batch row the stub pool's slices point at, so audit rows can reference it (S20 removes)."""
-    import psycopg
-
-    with psycopg.connect(url) as conn:
-        conn.execute(
-            "INSERT INTO batches (id, source, purpose, kib, outcome) VALUES (%s, 'stub', 'refill', 1, 'received') "
-            "ON CONFLICT DO NOTHING",
-            (STUB_BATCH_ID,),
-        )

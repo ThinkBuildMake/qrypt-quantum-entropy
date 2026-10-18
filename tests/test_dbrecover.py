@@ -17,6 +17,7 @@ from qrypt_entropy.errors import TemporarilyUnavailable
 from qrypt_entropy.service import access, issuance, meter
 from qrypt_entropy.storage import db
 from qrypt_entropy.transport import http_app, mcp_server
+from tests.conftest import client_key
 
 DEAD_URL = "postgresql://dev:dev@127.0.0.1:1/none"  # nothing listens on port 1: the database is "stopped"
 
@@ -148,7 +149,7 @@ async def test_tool_db_down(monkeypatch):  # AC3
         return "value-that-must-not-leak"
 
     monkeypatch.setattr(issuance, "get_random_bytes", get_random_bytes)
-    server = mcp_server.build_server(lambda: "stub-client-key")
+    server = mcp_server.build_server(lambda: client_key(), run_pool=False)
     with pytest.raises(ToolError) as err:
         await server.call_tool("get_random_bytes", {"length": 8, "encoding": "hex"})
     body = json.loads(str(err.value))

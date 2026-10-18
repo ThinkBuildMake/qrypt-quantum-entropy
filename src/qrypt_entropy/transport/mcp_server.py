@@ -1,8 +1,10 @@
 """MCP transport (stdio). Thin: authenticate, call the service, map errors. No logic of its own."""
 
+import asyncio
 import sys
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from mcp.server import MCPServer
@@ -13,7 +15,7 @@ from qrypt_entropy.config import MCP_SERVER_SECRETS, ConfigError, get_settings
 from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable, Unauthorized
 from qrypt_entropy.logs import configure_logging, get_logger, register_secret
 from qrypt_entropy.models import IssuedValue, Principal
-from qrypt_entropy.service import access, issuance
+from qrypt_entropy.service import access, issuance, pool
 from qrypt_entropy.storage.db import close_pools
 
 log = get_logger("mcp")
@@ -49,9 +51,31 @@ class EntropyServer(MCPServer):
             raise ToolError(TemporarilyUnavailable("the call could not be completed").json()) from exc
 
 
-def build_server(key_provider: Callable[[], str | None]) -> EntropyServer:
-    """`key_provider` returns the client key the process was launched with; it is checked on every call."""
-    server = EntropyServer("qrypt-entropy")
+STARTUP_WAIT_S = 5.0  # how long `initialize` may wait for the startup check; clients give up after about 10 s
+
+
+@asynccontextmanager
+async def _pool_lifespan(_server: MCPServer) -> AsyncIterator[None]:
+    """The process owns one Pool: the 1 KiB startup check runs when the server starts (DE-5), the pool stops with it.
+    The server waits for the check for at most STARTUP_WAIT_S (a 429 backoff can take minutes); a slower check
+    finishes in the background, and calls meanwhile wait on the pool, which has its own 2 s bound."""
+    starting = asyncio.create_task(pool.get_pool().start())
+    try:
+        try:
+            await asyncio.wait_for(asyncio.shield(starting), STARTUP_WAIT_S)
+        except TimeoutError:
+            log.warning("pool_startup_check_slow", waited_s=STARTUP_WAIT_S)
+        yield
+    finally:
+        starting.cancel()
+        await asyncio.gather(starting, return_exceptions=True)
+        await pool.shutdown()
+
+
+def build_server(key_provider: Callable[[], str | None], *, run_pool: bool = True) -> EntropyServer:
+    """`key_provider` returns the client key the process was launched with; it is checked on every call.
+    `run_pool=False` leaves the process-wide Pool alone (a caller that installed its own with `pool.use_pool`)."""
+    server = EntropyServer("qrypt-entropy", lifespan=_pool_lifespan if run_pool else None)
 
     async def call(name: str, run: Callable[[Principal], Awaitable[IssuedValue]]) -> IssuedValue:
         started = time.perf_counter()

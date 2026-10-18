@@ -211,3 +211,44 @@ async def test_wrong_size_fetch_is_discarded(monkeypatch):
     await pool.take(1)
     await asyncio.sleep(0.02)
     assert pool.level == 9 and marks == ["failed"]
+
+
+async def test_startup_check_bytes_are_served_after_every_refill_batch():  # S20 AC4, DEVIATIONS 14
+    pool = Pool(low_mark_bytes=0, high_mark_bytes=0)
+    pool.add("check", b"aaaa", last=True)
+    pool.add("refill-1", b"bbbb")
+    pool.add("refill-2", b"cccc")
+    taken = await pool.take(10)
+    assert taken.bytes == b"bbbbccccaa"
+    assert [s.batch_id for s in taken.slices] == ["refill-1", "refill-2", "check"]
+    pool.add("refill-3", b"dd")  # a late refill still goes ahead of the check's remaining bytes
+    assert (await pool.take(4)).bytes == b"ddaa"
+
+
+async def test_a_slow_meter_does_not_stall_the_event_loop(monkeypatch):  # S20: reserve/mark_batch run in a thread
+    import time
+
+    def slow_reserve(kib, purpose, src):
+        time.sleep(0.3)
+        return Batch(str(uuid.uuid4()), kib)
+
+    FakeUpstream(monkeypatch)
+    monkeypatch.setattr(meter, "reserve", slow_reserve)
+    monkeypatch.setattr(meter, "mark_batch", lambda batch_id, outcome: time.sleep(0.3))
+    pool = Pool(low_mark_bytes=2 * KIB, high_mark_bytes=4 * KIB)
+    gaps, stop = [], asyncio.Event()
+
+    async def ticker():
+        last = asyncio.get_running_loop().time()
+        while not stop.is_set():
+            await asyncio.sleep(0.01)
+            now = asyncio.get_running_loop().time()
+            gaps.append(now - last)
+            last = now
+
+    watcher = asyncio.create_task(ticker())
+    await pool.start()  # a startup check: one slow reserve and one slow mark
+    stop.set()
+    await watcher
+    await pool.stop()
+    assert max(gaps) < 0.15, max(gaps)
