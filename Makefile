@@ -28,7 +28,7 @@ GATE_P95_MS ?= 50
 export GATE_P95_MS
 
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mcp-list mcp-call report sample-metrics test lint gate \
-        test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
+        agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -90,6 +90,15 @@ run-http: ## serve the stub HTTP service locally on :8000
 
 trace: ## print the provenance of one issuance: make trace REF=<uuid>
 	@$(UV) python scripts/trace.py "$(REF)"
+
+agent-scripted: ## agent chat with the scripted model and a stub tool: make agent-scripted PROMPT='...'
+	@mkdir -p logs && $(UV) python -m qrypt_entropy.agent scripted "$(PROMPT)"
+
+agent-capture-check: ## check a saved model-request capture holds placeholders only: make agent-capture-check [CAPTURE=logs/agent-capture.json]
+	$(UV) python -m qrypt_entropy.agent capture-check "$(or $(CAPTURE),logs/agent-capture.json)"
+
+agent-tools: db-up migrate ## list the tools the agent gets from the stub MCP server (needs KEY_HASH_SECRET and PEPPER)
+	$(UV) python scripts/seed_stubs.py && $(UV) python scripts/agent_tools.py
 
 report: ## print the nine metrics panels: make report [LOG=calls.log] [SNAPSHOTS=snaps.json]
 	$(UV) python -m qrypt_entropy.transport.report_cli

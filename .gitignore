@@ -11,3 +11,4 @@ htmlcov/
 logs/
 .env
 backups/
+results/

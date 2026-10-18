@@ -1,6 +1,7 @@
 """Import-direction check (CH-2): transport -> service -> upstream -> storage, nothing imports upward.
 
-The `agent` package runs in its own process and may import neither a layer nor storage (it has no database).
+The `agent` package runs in its own process and may import neither a layer, storage nor config
+(it has no database and no server secrets).
 Exit 1 and print each violation when any exists.
 """
 
@@ -38,7 +39,7 @@ def find_violations(src: str | Path) -> list[str]:
                 target = parts[1]
                 where = f"{path.relative_to(src).as_posix()}:{node.lineno}"
                 if layer == "agent":
-                    bad = target in RANK or target == "service"
+                    bad = target in RANK or target in ("service", "config")  # the server's settings hold its secrets
                 elif layer == "common":
                     bad = target in RANK or target == "agent"
                 else:
