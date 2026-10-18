@@ -23,12 +23,25 @@ MAX_OWNER_LENGTH = 256
 FAILED_OUTCOMES = ("already_used", "expired", "unknown")
 
 
+def check_owner(owner: str) -> None:
+    """Reject an owner the database cannot hold (NUL) or that is not valid text (a lone surrogate)."""
+    try:
+        owner.encode()
+    except UnicodeEncodeError:
+        raise InvalidArgument("owner must be valid text") from None
+    if "\0" in owner:
+        raise InvalidArgument("owner must not contain a NUL character")
+
+
 def hash_token(owner: str, value: str) -> bytes:
     """HMAC-SHA-256 under the server-side pepper of the owner joined to the value (so owners never collide)."""
     pepper = get_settings().token_pepper
     if pepper is None or not pepper.get_secret_value():
         raise AppError("token pepper is not configured", code="temporarily_unavailable")
-    message = f"{owner}\0{value}".encode()
+    try:
+        message = f"{owner}\0{value}".encode()
+    except UnicodeEncodeError:
+        raise InvalidArgument("owner and value must be valid text") from None
     return hmac.new(pepper.get_secret_value().encode(), message, hashlib.sha256).digest()
 
 
@@ -81,6 +94,7 @@ def _record(conn, token_id, owner: str, outcome: str) -> str:
 
 def redeem(owner: str, value: str) -> str:
     """Redeem the owner's token for `value`; record exactly one outcome (never the value) in the same transaction."""
+    check_owner(owner)
     presented = hash_token(owner, value)
     settings = get_settings()
     with db.connection() as conn:

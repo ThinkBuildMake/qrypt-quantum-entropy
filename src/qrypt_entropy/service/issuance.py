@@ -151,6 +151,8 @@ async def generate_token(
             raise InvalidArgument("expiry_seconds needs an owner")
         if owner is not None and len(owner) > tokens.MAX_OWNER_LENGTH:
             raise InvalidArgument(f"owner must be at most {tokens.MAX_OWNER_LENGTH} characters")
+        if owner is not None:
+            tokens.check_owner(owner)
         if expiry_seconds is not None and not 1 <= expiry_seconds <= settings.token_expiry_max_seconds:
             raise InvalidArgument(f"expiry_seconds must be from 1 to {settings.token_expiry_max_seconds}")
         draw = _drawer(slices)

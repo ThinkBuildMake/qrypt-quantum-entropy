@@ -33,6 +33,8 @@ export GATE_P95_MS
         load load-latency load-concurrent agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 .PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
         fault-suite two-process-budget agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
+.PHONY: help install db-url db-up db-down db-reset migrate spike-roles seed seed-list-names mock-qrypt demo-guard demo-issue mcp-list mcp-call report sample-metrics test lint gate \
+        fuzz check-routes route-latency agent-scripted agent-capture-check agent-tools test-db-restart trace backup restore-drill check-imports check-language secret-scan run-http config-show check-env
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -161,6 +163,17 @@ test: ## offline test suite with coverage
 
 test-db-restart: ## opt-in: really restart the local Postgres (disrupts other worktrees; not part of the gate)
 	ALLOW_DB_RESTART=1 $(UV) pytest tests/test_dbrecover.py -k 'restart or survive' --no-cov
+
+ROBUST := tests/gate/test_robust_surface_gate.py --no-cov -s -q -p no:logging --show-capture=no
+
+fuzz: db-up migrate ## S37 AC2: 1,000 malformed inputs across every tool and route; 0 unhandled errors, 0 5xx
+	$(UV) pytest $(ROBUST) -k fuzz
+
+check-routes: db-up migrate ## S37 AC4: each hosted route called once with the right key; none returns an entropy-derived value
+	$(UV) pytest $(ROBUST) -k hosted_route
+
+route-latency: db-up migrate ## S37 AC5: 100 requests per hosted route, p95 <= 1 s, figures in results/route_latency.json (ROUTE_LATENCY_FILE)
+	$(UV) pytest $(ROBUST) -k route_latency
 
 check-imports:
 	$(UV) python tools/check_imports.py src
