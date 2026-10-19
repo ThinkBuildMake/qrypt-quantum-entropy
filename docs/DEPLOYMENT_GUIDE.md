@@ -217,6 +217,7 @@ Add one row for every database in use, with the KiB it has spent when you finish
 | Date | Database | KiB spent | Running total | Notes |
 |---|---|---|---|---|
 | 2026-10-17 | start of assessment | 0 | 0 | owner's reading, REQUIREMENTS GC-4 |
+| 2026-10-19 | spike `qrypt-db` (Render, deleted) | 0 | 0 | roles spike only, no live call; production `qrypt-db` created 2026-10-19T20:53Z, expires 2026-11-18 |
 | | | | | |
 
 ## 8b. Demos and checks that run locally
