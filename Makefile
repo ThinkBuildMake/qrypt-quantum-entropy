@@ -29,6 +29,7 @@ export GATE_P95_MS
 
 # One .PHONY line per target: keeps parallel branches merge-safe (union merge).
 .PHONY: agent
+.PHONY: aiusage-check
 .PHONY: agent-capture-check
 .PHONY: agent-scripted
 .PHONY: agent-tools
@@ -297,6 +298,9 @@ docs-check: ## S42: docs/technical has every section, matches the routes and too
 readme-check: ## README first line <= 120 characters, only real commands, scripts and variables, snippet equals docs/mcp-client.json
 	$(UV) python -m tools.readme_check
 
+aiusage-check: ## S45: AI_USAGE.md has the tools, models, purposes and configuration, names only files that exist, no secret
+	$(UV) python -m tools.aiusage_check
+
 snippet-check: ## launch an MCP client from the README snippet (throwaway database, mock Qrypt) and list the three tools
 	$(UV) python scripts/snippet.py check
 
@@ -320,6 +324,7 @@ gate: db-up migrate ## the regression gate: lint, tests + coverage + matrix + fu
 	$(MAKE) guide-check
 	$(MAKE) docs-check
 	$(MAKE) readme-check
+	$(MAKE) aiusage-check
 	$(MAKE) snippet-check
 	$(MAKE) secret-scan
 	$(MAKE) results-check

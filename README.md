@@ -95,3 +95,4 @@ Add `SKIP_GATE=1` to leave `make gate` out of the timing when you only want the 
 - `make report`: the nine metric panels. `make backup` and `make restore-drill`: `docs/BACKUP.md`.
 - Layout (nothing imports a layer above it): `src/qrypt_entropy/` has `transport/` (MCP tools, HTTP routes, report CLI), then `service/` (one file per module), then `upstream/` (entropy source), then `storage/`; `agent/` is a separate process.
 - Docs: `docs/ARCHITECTURE.md` (contracts), `docs/STUBS.md`, `docs/DEVIATIONS.md`, `docs/DEPLOY.md`, `docs/DEPLOYMENT_GUIDE.md` (hosting, backup, budget log; `make guide-check`).
+- AI usage: `AI_USAGE.md` (tools and models used to build, the agent's runtime model, decisions, what was verified by running, what failed; `make aiusage-check`).
