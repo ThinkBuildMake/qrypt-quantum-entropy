@@ -27,14 +27,15 @@ jobs:
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz \
             | sudo tar -xz -C /usr/local/bin gitleaks
-      - name: Install pg_dump 18 and age
+      - name: Install PostgreSQL 18 tools and age
         run: |
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -sSfo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
           . /etc/os-release
           printf 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' "$VERSION_CODENAME" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-18 age
+          sudo apt-get install -y -qq postgresql-18 postgresql-client-18 age
+          sudo systemctl stop postgresql || true # only the binaries are needed (the drill starts its own cluster)
           echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH" # the runner ships an older pg_dump that the wrapper would pick
       - run: uv sync --frozen
       - run: make gate
