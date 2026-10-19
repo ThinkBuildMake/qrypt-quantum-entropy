@@ -7,14 +7,23 @@ Pooled bytes live in this process's memory only (CP-2): never written to a file,
 """
 
 import asyncio
+import contextlib
 import random
 import threading
+import time
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
 
 from qrypt_entropy.config import get_settings
-from qrypt_entropy.errors import BudgetExhausted, Misconfigured, PoolStarved, TemporarilyUnavailable, Unavailable
+from qrypt_entropy.errors import (
+    AllotmentUsed,
+    BudgetExhausted,
+    Misconfigured,
+    PoolStarved,
+    TemporarilyUnavailable,
+    Unavailable,
+)
 from qrypt_entropy.logs import get_logger
 from qrypt_entropy.models import Batch, BatchSlice, PoolStatus, Taken
 from qrypt_entropy.service import meter
@@ -28,6 +37,11 @@ _orphans = 0  # cancelled reservations not yet settled; shutdown waits for them 
 _orphans_settled = threading.Condition()
 _RESERVATIONS = ThreadPoolExecutor(max_workers=2, thread_name_prefix="reserve")  # blocking Meter calls, off the loop
 BACKOFF_BASE_S, BACKOFF_MAX_S = 0.5, 10.0  # between failed refills, doubled each time, with jitter (DE-3)
+# A refill that fails still counts against the budget (a failed batch is charged, open question 5), so a fault that
+# lasts must not keep reserving (GC-4, RL-4):
+FATAL_RETRY_S = 300.0  # after a 401 or 403, try again at most this often (a take asks; nothing retries by itself)
+FAILURES_BEFORE_HARD_BACKOFF = 3  # consecutive failed refills before the pool backs off hard
+HARD_BACKOFF_S = 60.0  # then at most one attempt per this long, and only for a take that is waiting
 
 
 def reason_for(exc: Exception) -> str:
@@ -54,6 +68,9 @@ class Pool:
         self._waiting: list[int] = []  # sizes of the takes now waiting for a refill
         self._error: Exception | None = None  # why the latest refill failed; cleared by the next success
         self._last_success_at: str | None = None
+        self._failures = 0  # consecutive failed refills (a refused reservation is free and not counted)
+        self._cooldown_until = 0.0  # time.monotonic() before which no refill starts
+        self._poke = asyncio.Event()  # wakes a refill loop out of its backoff sleep
         self._changed = asyncio.Event()  # set (and replaced) whenever bytes arrive, a refill fails or the pool stops
 
     @property
@@ -91,7 +108,7 @@ class Pool:
                 self._chunks.popleft()
         self._level -= n
         if self._level < self.low:
-            self._ensure_refill()
+            self._ensure_refill(waiting=False)
         return Taken(bytes(out), slices)
 
     async def _wait_to_cover(self, n: int) -> None:
@@ -100,14 +117,24 @@ class Pool:
         started = loop.time()
         log.warning("pool_cannot_cover", wanted_bytes=n, level_bytes=self._level)
         self._waiting.append(n)
+        retried = False
         try:
             async with asyncio.timeout(WAIT_S):
                 while n > self._level:
                     if self._stopped:
                         raise PoolStarved("the pool is stopped")
-                    self._ensure_refill()
-                    if self._error is not None and reason_for(self._error) != "temporarily_unavailable":
-                        raise PoolStarved("the pool cannot be refilled", reason_for(self._error))
+                    began = self._ensure_refill(waiting=True)
+                    error = self._error
+                    if error is not None and reason_for(error) != "temporarily_unavailable":
+                        # A new attempt is under way after a long cooldown, or the cap may have been raised since a
+                        # refused reservation (free to retry): wait for that answer once before giving up.
+                        free_retry = isinstance(error, BudgetExhausted) and not isinstance(error, AllotmentUsed)
+                        if began or (free_retry and not retried):
+                            retried = retried or free_retry
+                            self._poke.set()
+                            await self._changed.wait()
+                            continue
+                        raise PoolStarved("the pool cannot be refilled", reason_for(error))
                     await self._changed.wait()
         except TimeoutError:
             exc = PoolStarved(
@@ -142,6 +169,7 @@ class Pool:
     async def start(self) -> None:
         """Run the 1 KiB startup check (DE-5), then begin the refill loop. A failed check is logged, never raised."""
         self._stopped, self._error, self._last_success_at = False, None, None
+        self._failures, self._cooldown_until = 0, 0.0
         if self.high - self.low < REFILL_KIB * KIB:
             log.warning(
                 "pool_marks_too_close", low_kib=self.low // KIB, high_kib=self.high // KIB, refill_kib=REFILL_KIB
@@ -169,7 +197,7 @@ class Pool:
             self._error = exc
             log.error("pool_startup_check_failed", cause=str(exc), reason=reason_for(exc))
         if not isinstance(self._error, Misconfigured):  # a bad token is not retried until a take asks
-            self._ensure_refill()
+            self._ensure_refill(waiting=False)
 
     async def _reserve(self, kib: int, purpose: str) -> Batch:
         """Meter.reserve is a blocking database call: run it off the event loop so waiting takes are not stalled.
@@ -195,6 +223,7 @@ class Pool:
         if self._stopped:
             return
         self._error, self._last_success_at = None, datetime.now(UTC).isoformat()
+        self._failures, self._cooldown_until = 0, 0.0
         self.add(batch_id, data, last=last)
         self._notify()
 
@@ -210,18 +239,27 @@ class Pool:
         self._check_chunk = None
         self._level = 0
 
-    def _ensure_refill(self) -> None:
-        if not self._stopped and (self._refill is None or self._refill.done()):
-            self._refill = asyncio.get_running_loop().create_task(self._refill_loop())
+    def _ensure_refill(self, *, waiting: bool) -> bool:
+        """Start the refill loop unless one runs, the pool is stopped or a cooldown is on. After a streak of
+        failures only a waiting take may start one. Returns whether it started a new loop."""
+        if self._stopped or (self._refill is not None and not self._refill.done()):
+            return False
+        if time.monotonic() < self._cooldown_until:
+            return False
+        if self._failures >= FAILURES_BEFORE_HARD_BACKOFF and not waiting:
+            return False
+        self._refill = asyncio.get_running_loop().create_task(self._refill_loop())
+        return True
 
     async def _refill_loop(self) -> None:
-        """At most one runs at a time. A failure is recorded for waiting takes, then retried after a growing pause."""
-        failures = 0
+        """At most one runs at a time. A failure is recorded for waiting takes, then retried after a growing pause;
+        a 401 or 403, or a streak of failures, ends the loop and sets a cooldown (the failed batches were charged)."""
         while self._level < max([self.low, *self._waiting]) and not self._stopped:
             headroom_kib = (self.high - self._level) // KIB
             if headroom_kib < 1:
                 return
             batch = None
+            self._poke.clear()
             try:
                 batch = await self._reserve(min(REFILL_KIB, headroom_kib), "refill")
                 fetched = await source.fetch(batch.kib)
@@ -237,20 +275,29 @@ class Pool:
                     await self._mark_failed(batch.batch_id)
                 if not isinstance(exc, Exception):
                     raise
-                failures += 1
                 self._error = exc
-                if isinstance(exc, Misconfigured):  # retrying a bad token only burns budget: the next take may try once
-                    log.error("pool_refill_failed", error="Misconfigured", cause=str(exc))
+                if isinstance(exc, Misconfigured | AllotmentUsed):  # retrying only burns budget: a take may try later
+                    self._cooldown_until = time.monotonic() + FATAL_RETRY_S
+                    log.error("pool_refill_failed", error=type(exc).__name__, cause=str(exc), retry_in_s=FATAL_RETRY_S)
                     self._notify()
                     return
-                delay = min(BACKOFF_MAX_S, BACKOFF_BASE_S * 2 ** (failures - 1)) * random.uniform(0.5, 1)  # noqa: S311
+                if batch is not None:  # the reservation was charged
+                    self._failures += 1
+                if self._failures >= FAILURES_BEFORE_HARD_BACKOFF:
+                    self._cooldown_until = time.monotonic() + HARD_BACKOFF_S
+                    log.warning("pool_refill_failed", error=type(exc).__name__, hard_backoff_s=HARD_BACKOFF_S)
+                    self._notify()
+                    return
+                delay = min(BACKOFF_MAX_S, BACKOFF_BASE_S * 2 ** max(self._failures - 1, 0))
+                delay *= random.uniform(0.5, 1)  # noqa: S311
                 log.warning(
-                    "pool_refill_failed", error=type(exc).__name__, attempt=failures, retry_in_s=round(delay, 2)
+                    "pool_refill_failed", error=type(exc).__name__, attempt=self._failures, retry_in_s=round(delay, 2)
                 )
                 self._notify()
-                await asyncio.sleep(delay)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(self._poke.wait(), delay)
                 continue
-            failures = 0
+            self._failures, self._cooldown_until = 0, 0.0
 
 
 def _orphan_started() -> None:
@@ -290,30 +337,42 @@ def _mark_orphan_failed(batch_id: str) -> None:
 def wait_for_orphans(timeout_s: float = 10.0) -> None:
     """Block until every cancelled reservation has been settled, so no worker touches the database afterwards."""
     with _orphans_settled:
-        _orphans_settled.wait_for(lambda: _orphans == 0, timeout_s)
+        if not _orphans_settled.wait_for(lambda: _orphans == 0, timeout_s):
+            log.error("orphan_reservations_unsettled", count=_orphans, waited_s=timeout_s)
 
 
 _pool: Pool | None = None
+_shut_down = False  # set by shutdown(): a late call must not build a new Pool that nothing would stop
 
 
 def get_pool() -> Pool:
     """The process-wide pool, built from the settings on first use (the MCP server starts and stops it)."""
     global _pool
+    if _shut_down:
+        raise PoolStarved("the pool is shut down")
     if _pool is None:
         _pool = Pool()
     return _pool
 
 
 def use_pool(pool: Pool | None) -> None:
-    """Swap the process-wide pool; None forgets it (tests reset the singleton between cases)."""
-    global _pool
-    _pool = pool
+    """Swap the process-wide pool; None forgets it (tests reset the singleton between cases). Also reopens it."""
+    global _pool, _shut_down
+    _pool, _shut_down = pool, False
+
+
+def reopen() -> None:
+    """Allow `get_pool` again after `shutdown` (a server starting in a process that already shut one down)."""
+    global _shut_down
+    _shut_down = False
 
 
 async def shutdown() -> None:
     """Stop the process-wide pool, discarding its bytes, and forget it."""
+    global _shut_down
     pool = _pool
     use_pool(None)
+    _shut_down = True
     if pool is not None:
         await pool.stop()
     await asyncio.to_thread(wait_for_orphans)

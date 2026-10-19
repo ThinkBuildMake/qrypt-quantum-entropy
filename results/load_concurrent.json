@@ -1,31 +1,32 @@
 {
   "run": "PF-2 sustained concurrency",
   "callers": 100,
-  "seconds": 45.5,
+  "seconds": 38.6,
   "calls": 10099,
   "successful_calls": 9893,
-  "throughput_calls_per_s": 222.0,
+  "throughput_calls_per_s": 261.9,
   "server_errors_by_code": {},
   "injected_invalid_calls": {
     "sent": 206,
     "answered_invalid_argument": 206
   },
   "server_error_rate": 0.0,
-  "note_errors": "about 1 call in 50 is deliberately invalid (length 0); each must answer invalid_argument and is reported under injected_invalid_calls, not as a server error",
+  "note_errors": "about 1 call in 50 is deliberately invalid (length 0): each must answer invalid_argument and is reported under injected_invalid_calls, not as a server error",
   "latency_under_load_ms": {
-    "p50": 459.0,
-    "p95": 530.53,
-    "p99": 598.59,
-    "max": 856.75
+    "p50": 381.51,
+    "p95": 431.13,
+    "p99": 479.98,
+    "max": 642.68
   },
   "upstream_requests_excluding_startup_check": 4,
   "kib_fetched_per_upstream_request": 96.0,
-  "kib_served_per_upstream_request": 66.09,
-  "max_upstream_requests_in_10s": 2,
+  "kib_served_per_upstream_request": 66.06,
+  "max_upstream_requests_in_10s": 3,
   "upstream_429s": 0,
-  "pool_max_level_kib": 127.2,
-  "pool_first_refill_level_kib": 1.0,
+  "pool_max_level_kib": 126.6,
+  "pool_first_refill_level_kib": 0.9,
   "overlapping_ranges": 0,
+  "warm_up_calls": 3,
   "issuances_rows": 9896,
   "calls_spanning_two_batches": 2,
   "environment": {
@@ -40,32 +41,32 @@
     {
       "check": "AC2 zero server errors (injected invalid calls are counted separately and must all be refused)",
       "pass": true,
-      "detail": "10099 calls in 45.5 s with 100 in flight; server errors none; 206 injected invalid calls, 206 refused as invalid_argument"
+      "detail": "10099 calls in 38.6 s with 100 in flight; server errors none; 206 injected invalid calls, 206 refused"
     },
     {
       "check": "AC2 at least the asked duration and calls",
       "pass": true,
-      "detail": "45.5 s, 10099 calls"
+      "detail": "38.6 s, 10099 calls"
     },
     {
       "check": "AC3 KiB SERVED per upstream request, startup check excluded, is 64 or more",
       "pass": true,
-      "detail": "264.3 KiB served / 4 requests = 66.09; budget meter 384 KiB fetched = 96.00 per request"
+      "detail": "264.2 KiB served / 4 requests = 66.06; budget meter 384 KiB fetched = 96.00 per request"
     },
     {
       "check": "AC4 at most 30 upstream requests in any 10 s window",
       "pass": true,
-      "detail": "maximum 2 over 5 requests (0 answered 429)"
+      "detail": "maximum 3 over 5 requests (0 answered 429)"
     },
     {
       "check": "AC5 pool level never above the high mark",
       "pass": true,
-      "detail": "maximum 127.2 KiB (mark 128 KiB) over 4732 samples every 10 ms"
+      "detail": "maximum 126.6 KiB (mark 128 KiB) over 4038 samples every 10 ms"
     },
     {
       "check": "AC5 every refill began below the low mark",
       "pass": true,
-      "detail": "first refill began at 1.0 KiB (mark 32 KiB); 4 refills, 0 started at or above it"
+      "detail": "first refill began at 0.9 KiB (mark 32 KiB); 4 refills, 0 started at or above it"
     },
     {
       "check": "AC6 no byte served twice",

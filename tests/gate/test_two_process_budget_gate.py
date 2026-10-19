@@ -11,6 +11,7 @@ import psycopg
 from mcp.client import Client
 
 from qrypt_entropy.config import get_settings
+from qrypt_entropy.errors import BudgetExhausted
 from qrypt_entropy.service import access, meter, pool
 from tests.mock_qrypt import MockQrypt
 from tests.test_mcp_connect import launch
@@ -77,3 +78,37 @@ async def test_retry_one_batch(db, monkeypatch):
     assert rows(db, "SELECT purpose, kib, outcome FROM batches") == [("refill", 96, "received")]
     assert rows(db, "SELECT used_kib FROM budget") == [(96,)]
     assert [r.status for r in mock.log] == [429, 200] and mock.sizes() == ["96", "96"]
+
+
+def _race(ask, threads):
+    """`threads` callers reserve `ask` KiB at once; returns the KiB granted to each."""
+    import threading
+
+    start, granted = threading.Barrier(threads), []
+
+    def reserve():
+        start.wait()
+        try:
+            granted.append(meter.reserve(ask, "refill", "qrypt").kib)
+        except BudgetExhausted:
+            pass
+
+    workers = [threading.Thread(target=reserve) for _ in range(threads)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    return granted
+
+
+def test_concurrent_reserves_never_pass_the_cap(db):
+    """The row lock in `meter.reserve` is what keeps the cap: many callers at once, each wanting more than the room
+    left (a REFILL_KIB-sized ask against a small cap), several rounds. Without `FOR UPDATE` they all read the same
+    `used_kib` and the sum of grants passes the cap."""
+    room, ask = 100, 96
+    for _ in range(5):
+        [(before,)] = rows(db, "SELECT used_kib FROM budget")
+        meter.set_budget(before + room)  # used_kib only rises, so each round gets fresh room
+        granted = _race(ask, 16)
+        assert sum(granted) <= room
+        assert rows(db, "SELECT used_kib FROM budget") == [(before + sum(granted),)]

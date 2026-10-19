@@ -6,6 +6,8 @@ import sys
 import threading
 import time
 
+import pytest
+
 from qrypt_entropy import logs
 from qrypt_entropy.models import Batch
 from qrypt_entropy.service import meter, pool
@@ -36,3 +38,24 @@ def test_an_unraisable_exception_is_one_json_line(capsys):
     sys.unraisablehook(type("Args", (), {"exc_value": RuntimeError("secret detail"), "exc_type": RuntimeError})())
     err = capsys.readouterr().err.strip()
     assert err.count("\n") == 0 and '"error": "RuntimeError"' in err and "secret detail" not in err
+
+
+async def test_after_shutdown_a_take_is_refused_and_no_new_pool_starts():
+    from qrypt_entropy.errors import PoolStarved
+
+    pool.use_pool(pool.Pool())
+    await pool.shutdown()
+    with pytest.raises(PoolStarved):
+        await pool.take(8)
+    assert pool._pool is None
+    pool.reopen()
+    assert pool.get_pool() is not None
+
+
+def test_wait_for_orphans_logs_when_it_times_out(monkeypatch):
+
+    monkeypatch.setattr(pool, "_orphans", 1)
+    lines = []
+    monkeypatch.setattr(pool.log, "error", lambda event, **fields: lines.append((event, fields)))
+    pool.wait_for_orphans(0.05)
+    assert lines and lines[0][0] == "orphan_reservations_unsettled" and lines[0][1]["count"] == 1

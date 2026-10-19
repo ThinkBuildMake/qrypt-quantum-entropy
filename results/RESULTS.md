@@ -18,22 +18,22 @@ All core logic: 96.2%. Whole package: 91.3%.
 
 ## Throughput and error rate
 
-Throughput: 222.0 calls/s (100 concurrent callers, 45.5 s, 10099 calls).
+Throughput: 261.9 calls/s (100 concurrent callers, 38.6 s, 10099 calls).
 
-Error rate: 0% server errors ({}). Separately, 206 of 10099 calls (2.04%) were injected invalid calls and 206 were refused as invalid_argument: about 1 call in 50 is deliberately invalid (length 0); each must answer invalid_argument and is reported under injected_invalid_calls, not as a server error.
+Error rate: 0% server errors ({}). Separately, 206 of 10099 calls (2.04%) were injected invalid calls and 206 were refused as invalid_argument: about 1 call in 50 is deliberately invalid (length 0): each must answer invalid_argument and is reported under injected_invalid_calls, not as a server error.
 
 ## Latency (p50, p95, p99)
 
 | run | p50 ms | p95 ms | p99 ms |
 |---|---|---|---|
 | warm pool, 1000 calls one at a time (PF-1, limit p95 under 50 ms) | 6.34 | 13.98 | 20.16 |
-| 100 callers at once (PF-2) | 459.0 | 530.53 | 598.59 |
+| 100 callers at once (PF-2) | 381.51 | 431.13 | 479.98 |
 
 Warm-pool errors: 0.
 
 ## KiB per upstream request
 
-Fetched per upstream request: 96.0 KiB (startup check excluded, 4 requests). Served per upstream request: 66.09 KiB. Most upstream requests in any 10 s: 2; 429s: 0.
+Fetched per upstream request: 96.0 KiB (startup check excluded, 4 requests). Served per upstream request: 66.06 KiB. Most upstream requests in any 10 s: 3; 429s: 0.
 
 ## Golden set (EV-1)
 

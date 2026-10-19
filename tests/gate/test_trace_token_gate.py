@@ -14,6 +14,7 @@ OWNER, VALUE = "user-42", "731905"
 
 @pytest.fixture
 def traced(db):
+    tokens._trace_failures.clear()  # the lookup limit is in memory
     admin = access.create_credential("admin", "root")[1]
     client_id = access.create_credential("client", "billing-agent")[0].client_id
     reference = str(uuid.uuid4())
@@ -78,7 +79,12 @@ def test_invalid_body_is_400_and_does_not_echo_the_value(traced):
     assert r.status_code == 400 and "secret-value-9" not in r.text
 
 
-def test_failed_lookups_share_the_redemption_failure_limit(traced):
+def _outcomes(db):
+    with psycopg.connect(db) as conn:
+        return conn.execute("SELECT count(*) FROM redemption_outcomes").fetchone()[0]
+
+
+def test_failed_lookups_are_limited_on_their_own(traced):
     http, admin, _ = traced
     from qrypt_entropy.config import get_settings
 
@@ -87,3 +93,25 @@ def test_failed_lookups_share_the_redemption_failure_limit(traced):
         assert r.status_code == 404
     r = http.post("/admin/trace-token", headers=admin, json={"owner": OWNER, "value": VALUE})  # even the right code
     assert r.status_code == 503 and VALUE not in r.text and "reference" not in r.json()
+
+
+def test_lookups_stay_out_of_redemption_outcomes_and_cannot_lock_out_verify(traced, db):
+    """S33 AC9 panels and OB-6 count real attempts; an admin probe must not lock an owner out of /verify."""
+    from qrypt_entropy.config import get_settings
+
+    http, admin, _ = traced
+    for i in range(get_settings().rate_limit_max_failures + 2):
+        http.post("/admin/trace-token", headers=admin, json={"owner": OWNER, "value": f"00000{i}"})
+    assert _outcomes(db) == 0
+    assert tokens.redeem(OWNER, VALUE) == "redeemed"
+    assert _outcomes(db) == 1
+
+
+def test_a_seed_token_traced_with_the_right_value_is_not_a_failed_guess(traced, db):
+    from qrypt_entropy.config import get_settings
+
+    http, admin, _ = traced
+    for _ in range(get_settings().rate_limit_max_failures + 2):
+        r = http.post("/admin/trace-token", headers=admin, json={"owner": "seed-owner", "value": "123456"})
+        assert r.status_code == 404  # still the uniform 404, never a rate limit
+    assert _outcomes(db) == 0

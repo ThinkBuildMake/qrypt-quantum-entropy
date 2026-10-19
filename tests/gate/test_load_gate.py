@@ -49,7 +49,7 @@ def test_load_concurrent_smoke(tmp_path):
     ]  # served can fall short of fetched only by what is still pooled
     assert 96 * n - 129 <= doc["kib_served_per_upstream_request"] * n <= doc["kib_fetched_per_upstream_request"] * n
     assert doc["overlapping_ranges"] == 0
-    assert doc["issuances_rows"] >= doc["successful_calls"]
+    assert doc["issuances_rows"] == doc["successful_calls"] + doc["warm_up_calls"] and doc["warm_up_calls"] >= 1
     GATE_STATS["load smoke calls, max upstream requests in 10 s"] = (
         f"{doc['calls']}, {doc['max_upstream_requests_in_10s']}"
     )

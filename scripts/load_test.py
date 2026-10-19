@@ -171,12 +171,15 @@ async def call(client: Client, tool: str, args: dict) -> tuple[float, str | None
     return ms, (json.loads(result.content[0].text)["error"] if result.is_error else None)
 
 
-async def warm_up(client: Client, mock: MockQrypt) -> None:
-    """Wait for the first refill, so the pool is warm (PF-1 measures a warm pool)."""
+async def warm_up(client: Client, mock: MockQrypt) -> int:
+    """Wait for the first refill, so the pool is warm (PF-1 measures a warm pool). Returns how many warm-up calls
+    succeeded, each of which leaves one issuances row."""
+    succeeded = 0
     for _ in range(100):
-        await call(client, *CALLS[0])
+        _, error = await call(client, *CALLS[0])
+        succeeded += not error
         if sum(1 for r in mock.log if r.size == str(REFILL_KIB) and r.status == 200):
-            return
+            return succeeded
         await asyncio.sleep(0.1)
     raise SystemExit("the pool never filled")
 
@@ -241,7 +244,7 @@ async def concurrent(args) -> dict:
         ok, errors, ms = 0, {}, []
         injected = {"sent": 0, "answered_invalid_argument": 0}  # deliberate bad calls, not server errors
         async with Client(run.params()) as client:
-            await warm_up(client, run.mock)
+            warm_count = await warm_up(client, run.mock)
             started = time.perf_counter()
 
             def total() -> int:
@@ -268,7 +271,6 @@ async def concurrent(args) -> dict:
             await asyncio.gather(*(caller(n) for n in range(args.callers)))
             elapsed = time.perf_counter() - started
             await asyncio.sleep(1.2)  # lets the probe flush its last file
-        warm_ok = run.query("SELECT count(*) FROM issuances")[0][0] - ok
         total_calls = ok + sum(errors.values()) + injected["sent"]
         server_errors = errors
         ms.sort()
@@ -330,7 +332,7 @@ async def concurrent(args) -> dict:
         check(
             "AC6 no byte served twice",
             overlaps == 0 and total_calls >= args.min_calls,
-            f"{overlaps} overlapping ranges among {ranges} ranges from {ok + warm_ok} issuances",
+            f"{overlaps} overlapping ranges among {ranges} ranges from {ok + warm_count} issuances",
         )
         rows = run.query("SELECT count(*) FROM issuances")[0][0]
         crossing = run.query("""SELECT count(*) FROM (SELECT issuance_id FROM issuance_batches GROUP BY issuance_id
@@ -339,8 +341,8 @@ async def concurrent(args) -> dict:
                                  (SELECT sum(byte_count) FROM issuance_batches WHERE issuance_id = i.id)""")[0][0]
         check(
             "AC7 one audit row per successful call",
-            rows == ok + warm_ok and mismatched == 0,
-            f"{ok + warm_ok} successful calls (including {warm_ok} warm-up), {rows} issuances rows; "
+            rows == ok + warm_count and mismatched == 0,
+            f"{ok + warm_count} successful calls (including {warm_count} warm-up), {rows} issuances rows; "
             f"{crossing} calls span two batches and list both; {mismatched} rows whose ranges do not add up",
         )
         doc = {
@@ -369,6 +371,7 @@ async def concurrent(args) -> dict:
             "pool_max_level_kib": round(probe["max_level"] / 1024, 1),
             "pool_first_refill_level_kib": round(first["level"] / 1024, 1) if first else None,
             "overlapping_ranges": overlaps,
+            "warm_up_calls": warm_count,
             "issuances_rows": rows,
             "calls_spanning_two_batches": crossing,
             "environment": env,

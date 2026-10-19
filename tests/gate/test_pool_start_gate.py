@@ -9,6 +9,7 @@ import pytest
 from qrypt_entropy.errors import Misconfigured, PoolStarved, Unavailable
 from qrypt_entropy.models import Batch, Fetched
 from qrypt_entropy.service import meter
+from qrypt_entropy.service import pool as pool_module
 from qrypt_entropy.service.pool import Pool
 from qrypt_entropy.upstream import source
 from tests.mock_qrypt import MockQrypt
@@ -120,13 +121,16 @@ async def test_pool_status_failing(stubs):
     await pool.stop()
 
 
-async def test_pool_status_recovers(stubs):
+async def test_pool_status_recovers(stubs, monkeypatch):
+    monkeypatch.setattr(pool_module, "HARD_BACKOFF_S", 0.3)
     pool = await started_pool(stubs)
     stubs.error = Unavailable("down")
     await pool.take(pool.level)
     with pytest.raises(PoolStarved):
         await pool.take(10)
     stubs.error = None
+    await asyncio.sleep(0.35)  # after a streak of failures only a waiting take starts the next attempt
+    await pool.take(10)
     async with asyncio.timeout(10):
         while pool.status().upstream_status != "ok":
             await asyncio.sleep(0.05)

@@ -68,7 +68,7 @@ app = FastAPI(title="Qrypt entropy service", openapi_url=None, docs_url=None, re
 
 @app.middleware("http")
 async def _log_request(request: Request, call_next):
-    status = 500  # an unhandled exception still leaves its request line
+    status = 503  # an unhandled exception still leaves its request line, with what `_crash` answers
     try:
         response = await call_next(request)
         status = response.status_code

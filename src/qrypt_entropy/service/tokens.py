@@ -11,7 +11,10 @@ Only a keyed hash of a token is ever stored; the plain value and the pepper are 
 
 import hashlib
 import hmac
+import threading
+import time
 import uuid
+from collections import deque
 
 import psycopg
 
@@ -92,32 +95,48 @@ def _record(conn, token_id, owner: str, outcome: str) -> str:
     return outcome
 
 
+_trace_failures: dict[str, deque[float]] = {}  # owner -> times of failed lookups in this process (monotonic)
+_trace_lock = threading.Lock()
+_TRACE_OWNERS_KEPT = 1000
+
+
+def _trace_limited(owner: str, *, record: bool) -> bool:
+    """Whether `owner` has hit the failed-lookup limit; with `record`, count one more failure. Lookups keep their own
+    in-memory count so they never write `redemption_outcomes` (the S33 panels and OB-6 count real redemption
+    attempts) and never lock an owner out of /verify. The count is per process: admin-only, so this is a brake on
+    enumeration, not a shared quota."""
+    settings = get_settings()
+    now = time.monotonic()
+    with _trace_lock:
+        if len(_trace_failures) > _TRACE_OWNERS_KEPT:
+            stale = [k for k, v in _trace_failures.items() if not v or now - v[-1] > settings.rate_limit_window_seconds]
+            for key in stale:
+                del _trace_failures[key]
+        times = _trace_failures.setdefault(owner, deque())
+        while times and now - times[0] > settings.rate_limit_window_seconds:
+            times.popleft()
+        limited = len(times) >= settings.rate_limit_max_failures
+        if record and not limited:
+            times.append(now)
+        return limited
+
+
 def find_issuance(owner: str, value: str) -> str:
     """The issuance reference of the owner's stored token for `value` (F5b trace). The value is only hashed. An unknown
-    token and a seed token (it has no issuance) raise the same NotFound. Failed lookups count against the same
-    per-owner failure limit as redemption (AZ-6), so the lookup cannot be used to guess a code before redeeming it."""
+    token and a seed token (it has no issuance) raise the same NotFound; only the unknown one counts as a failed
+    guess. Failed lookups are limited per owner (AZ-6) so the lookup cannot be used to guess a code, but on their own
+    counter, not in the redemption outcomes."""
     check_owner(owner)
     presented = hash_token(owner, value)
-    settings = get_settings()
-    with db.connection() as conn:
-        _lock_owner(conn, owner, settings.rate_limit_lock_timeout_ms)
-        failures = conn.execute(
-            "SELECT count(*) FROM redemption_outcomes WHERE owner = %s AND outcome = ANY(%s)"
-            " AND attempted_at > clock_timestamp() - make_interval(secs => %s)",
-            (owner, list(FAILED_OUTCOMES), settings.rate_limit_window_seconds),
-        ).fetchone()[0]
-        if failures >= settings.rate_limit_max_failures:
-            _record(conn, None, owner, "rate_limited")
-            limited = True
-        else:
-            limited = False
-            rows = conn.execute("SELECT issuance_id, token_hash FROM tokens WHERE owner = %s", (owner,)).fetchall()
-            found = [row[0] for row in rows if hashes_equal(bytes(row[1]), presented) and row[0] is not None]
-            if not found:
-                _record(conn, None, owner, "unknown")
-    if limited:
+    if _trace_limited(owner, record=False):
         raise RateLimited("too many failed attempts for this owner; try again later")
+    with db.connection() as conn:
+        rows = conn.execute("SELECT issuance_id, token_hash FROM tokens WHERE owner = %s", (owner,)).fetchall()
+    matches = [row[0] for row in rows if hashes_equal(bytes(row[1]), presented)]
+    found = [issuance for issuance in matches if issuance is not None]
     if not found:
+        if not matches:
+            _trace_limited(owner, record=True)
         raise NotFound("no such token")
     return str(found[0])
 

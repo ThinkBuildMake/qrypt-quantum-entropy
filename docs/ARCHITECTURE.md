@@ -750,6 +750,7 @@ Meter.reserve and Meter.markBatch, and Entropy source.fetch. After the budget is
 - A call that the pool cannot cover removes 0 bytes (VR-8).
 - Level never exceeds the high mark, and a refill starts when it falls below the low mark. Both are configurable (SC-1).
 - A refill asks for 96 KiB (at least 64) while the budget allows, so the KiB served per upstream request reaches 64 (PF-3).
+- A refill that fails is still charged (a failed batch is never refunded), so a lasting fault must not keep reserving: a 401 or 403 stops refilling and is retried at most every 5 minutes, only when a take asks; after 3 failed refills in a row the pool tries at most once a minute, only for a waiting take; a refused reservation is free and a waiting take retries it once at once. After shutdown a take fails and no new pool is built (RL-4, GC-4).
 - When the pool first cannot cover a call, and when the resulting error is returned, an event is logged (OB-8).
 - No pooled byte is written to disk, a log or an error message (CP-2, OB-3).
 - Serving bytes already in the pool after the budget is spent follows Decision 2 (REQUIREMENTS open item 5, assumption A-13).

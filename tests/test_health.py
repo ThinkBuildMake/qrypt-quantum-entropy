@@ -93,3 +93,28 @@ def test_future_report_is_fresh_with_age_zero(world):
     body = http.get("/health").json()
     assert body["reporting"] is True
     assert body["reportAgeSeconds"] == 0
+
+
+def test_request_log_says_what_the_client_got_for_an_unhandled_error(monkeypatch, tmp_path):
+    """H03: an unhandled exception is answered 503 by the crash handler; the request line must say 503, not 500."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from qrypt_entropy.logs import configure_logging
+    from qrypt_entropy.service import status
+    from qrypt_entropy.transport.http_app import app
+
+    def boom():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(status, "get_health", boom)
+    log_file = tmp_path / "http.log"
+    configure_logging("INFO", str(log_file))
+    try:
+        reply = TestClient(app, raise_server_exceptions=False).get("/health")
+    finally:
+        lines = [json.loads(line) for line in log_file.read_text().splitlines()]
+        configure_logging()
+    logged = [line for line in lines if line.get("event") == "request" and line.get("path") == "/health"]
+    assert reply.status_code == 503 and [line["status"] for line in logged] == [503]

@@ -22,9 +22,10 @@ every `/admin/*` route and `/metrics`. `/health` is open. A revoked key is refus
 application code; the database roles in 04 are a second, independent limit on what each process can do.
 
 `POST /admin/trace-token` lets an admin who holds an owner and a code find its issuance. That could be used to test
-guesses at a code before redeeming it, so a failed lookup is recorded as an `unknown` outcome and counts toward the same
-per-owner failure limit as `/verify` (AZ-6). What remains is admin-only: an admin can still learn that a guess is right
-(a hit) without redeeming, up to the limit. `docs/DEVIATIONS.md` H02-2.
+guesses at a code before redeeming it, so failed lookups are limited per owner with the same limit and window as
+`/verify` (AZ-6), on a separate in-memory count that is not written to `redemption_outcomes` (so a probe cannot lock an
+owner out of `/verify` or skew the outcome panels). What remains is admin-only: an admin can still learn that a guess is right
+(a hit) without redeeming, up to the limit. `docs/DEVIATIONS.md` H02-2, H03-2.
 
 ### Logging
 

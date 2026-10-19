@@ -72,5 +72,10 @@ Deliberately out of this version (FR-6.2):
 - **Metrics are per process and reported every 5 s.** They are as fresh as the last report and read "not reporting"
   after 15 s.
 - **A multi-draw call discards bytes** if a later draw fails, so a failed `random_int` can spend entropy without issuing.
+- **Trace-lookup limit is per process.** Failed `/admin/trace-token` lookups are counted in the HTTP process's memory,
+  so it restarts with the process and is not shared between instances (`docs/DEVIATIONS.md` H03-2).
+- **A failed refill is charged.** The budget meter is not refunded for batches that failed, even when no request
+  reached Qrypt; the pool only limits how often it tries (`docs/DEVIATIONS.md` H03-1).
+- **Not fixed (review items 7 and 11).** Skipped on purpose in the H03 pass; they are known and unchanged.
 - **Seed tokens have no audit record** (they are flagged `is_seed`).
 - **The 15-prompt golden set, the adversarial set and a real-model trial** were not run against a real model here.

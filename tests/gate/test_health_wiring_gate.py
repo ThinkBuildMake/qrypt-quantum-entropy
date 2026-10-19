@@ -103,11 +103,15 @@ async def test_health_real_report_not_reporting_and_restart(stack):
         assert (h["pool"]["lowMarkBytes"], h["pool"]["highMarkBytes"]) == (32768, 131072)
         assert h["pool"]["levelBytes"] > 0 and h["upstream"]["status"] == "ok"
         assert sample(metrics(stack, stack.keys["admin"]).text, "qrypt_pool_level_bytes") > 0
+        assert sample(metrics(stack, stack.keys["admin"]).text, "qrypt_calls_total", tool="get_random_bytes") >= 1
     await asyncio.sleep(16)
     assert health(stack)["reporting"] is False
     text = metrics(stack, stack.keys["admin"]).text  # AC7: only the report age (and the budget) remain
     assert sample(text, "qrypt_report_age_seconds") > 15
-    assert sample(text, "qrypt_pool_level_bytes") is None and sample(text, "qrypt_calls_total", tool="x") is None
+    assert (
+        sample(text, "qrypt_pool_level_bytes") is None
+        and sample(text, "qrypt_calls_total", tool="get_random_bytes") is None
+    )
     async with Client(launch(stack.tmp, stack.keys["billing-agent"])) as client:
         await client.list_tools()
         await asyncio.sleep(1)

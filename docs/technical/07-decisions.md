@@ -50,14 +50,15 @@
 
 ### Where the build differs from the design documents
 
-Full list with reasons: `docs/DEVIATIONS.md` (numbered 1 to 22). The ones a reviewer should know:
+Full list with reasons: `docs/DEVIATIONS.md` (numbered 1 to 22, then H02 and H03 rows). The ones a reviewer should know:
 
 - Local database is Postgres 16 on a shared server, not Postgres 18 in Compose (1); the Postgres 18 path is unrun.
 - Nothing ran on Render, GitHub Actions or live Qrypt (2, 3, 4, 18, 21).
 - The secret scan falls back to a regex scanner when the gitleaks CLI is absent (5); CI installs gitleaks.
 - The pool waits 1.8 s, not 2.0 s, for a refill (12).
-- The startup check's 1 KiB is served after every refill batch so values name a 64 KiB batch (14).
-- The MCP server's start waits at most 5 s for the Qrypt startup check, which may finish later in the background (16).
+- The startup check's 1 KiB is served after every refill batch so values name a 64 KiB batch (17).
+- The MCP server's start waits at most 5 s for the Qrypt startup check, which may finish later in the background (19).
+- A failed refill is still charged to the budget, so a fault slows the refills down instead of repeating them (H03-1).
 - The tables are owned by whoever ran the migration, not by `migrator` (9).
 
 ### Stubs

@@ -60,6 +60,7 @@ async def _pool_lifespan(_server: MCPServer) -> AsyncIterator[None]:
     """The process owns one Pool: the 1 KiB startup check runs when the server starts (DE-5), the pool stops with it.
     The server waits for the check for at most STARTUP_WAIT_S (a 429 backoff can take minutes); a slower check
     finishes in the background, and calls meanwhile wait on the pool, which has its own 2 s bound."""
+    pool.reopen()
     starting = asyncio.create_task(pool.get_pool().start())
     reporter = default_reporter()  # the 5 s status report (OB-9) runs while the server does
     reporter.start()

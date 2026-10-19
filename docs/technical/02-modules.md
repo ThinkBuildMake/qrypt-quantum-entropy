@@ -77,8 +77,12 @@ Holds fetched entropy in memory and hands each byte out once.
   offset, count). If the pool cannot cover `n`, it waits up to 1.8 s for a refill, then raises `PoolStarved` whose code
   is the reason (`temporarily_unavailable`, `budget_exhausted` or `upstream_misconfigured`), so the error is out in
   under 2 s (RL-1).
-- Refill failures are retried after a pause that doubles from 0.5 s to 10 s with jitter. A 401 is not retried until a
-  take asks.
+- A refill that fails is still charged to the budget (a failed batch is never refunded), so repeated failure is
+  bounded: retries pause 0.5 s doubling to 10 s with jitter; after 3 failures in a row the pool tries at most once per
+  60 s and only for a take that is waiting; a 401 or 403 stops refilling and is retried at most every 300 s, and only
+  when a take asks (`FATAL_RETRY_S`, `FAILURES_BEFORE_HARD_BACKOFF`, `HARD_BACKOFF_S`). A refused reservation (cap
+  reached) is free and does not count; a take that finds one retries once at once, so a raised cap is used straight
+  away. After `shutdown()` a take raises `PoolStarved` and no new pool is built.
 - `start()` runs a 1 KiB startup check (DE-5); a failure is logged, not raised. Its bytes join the pool but are served
   after every refill batch, so a client sees a refill batch id rather than the 1 KiB check.
 - `status()` is `ok`, `degraded` (a refill failed but the pool still serves), `failing` (empty or a call is waiting) or

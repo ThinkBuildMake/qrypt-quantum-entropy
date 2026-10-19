@@ -150,8 +150,9 @@ value is hashed with the token pepper (the way redemption does), compared with t
 logged or returned. 200 with the same body as `GET /admin/issuances/{reference}` for the issuance that produced the
 token; this is how an admin holding only an owner and a code finds the reference. 404 `not_found` ("no such token") for
 an unknown token and for a seed token, which has no issuance, so the answer says nothing more. It is not a
-redemption (the token is not marked used), but a failed lookup is recorded as an `unknown` outcome and counts toward the
-same per-owner failure limit as `POST /verify` (AZ-6); at the limit it answers 503 `temporarily_unavailable`. The request
+redemption (the token is not marked used). A failed lookup counts toward a per-owner limit with the same size and window
+as `POST /verify` (AZ-6) but on its own in-memory count, not in `redemption_outcomes`; at the limit it answers 503
+`temporarily_unavailable`. A seed token traced with the right value is not counted as a failure. The request
 shape is checked before the key, as on every route here (a malformed body from an unauthenticated caller gets 400, never
 any token information). `TRACE_VALUE=<code> make trace OWNER=<owner>` does the same lookup from the command line (needs
 `DATABASE_URL` and `PEPPER`; the value comes from the environment so it stays out of the process list).
