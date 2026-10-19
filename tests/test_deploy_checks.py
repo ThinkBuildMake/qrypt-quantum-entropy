@@ -1,6 +1,5 @@
 """S46: the deployed-URL, budget-log and submission scripts pass on a good target and fail on each kind of bad one."""
 
-import datetime
 import http.server
 import json
 import re
@@ -286,11 +285,3 @@ def test_secret_scan_check_reports_a_secret(tmp_path):
     (root / "tools").symlink_to(ROOT / "tools")  # the check runs `python -m tools.secret_scan` in the repository
     (root / "leak.txt").write_text("".join(["AKIA", "ABCDEFGHIJKLMNOP"]) + "\n")
     assert submission_check.check_secrets(root)[0] == "FAIL"
-
-
-def test_checklist_names_only_real_make_targets():
-    checklist = (ROOT / "docs/SUBMISSION_CHECKLIST.md").read_text()
-    targets = set(re.findall(r"^([a-z][a-z0-9-]*):", (ROOT / "Makefile").read_text(), re.M))
-    used = set(re.findall(r"\bmake ([a-z][a-z0-9-]*)", checklist))
-    assert used - targets == set()
-    assert datetime.date(2026, 10, 20).isoformat() in checklist

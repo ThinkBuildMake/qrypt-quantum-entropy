@@ -25,15 +25,6 @@ def harness(tmp_path, *args, **env):
     )
 
 
-def test_eval_list_names_15_and_5():
-    """AC1 eval-list."""
-    done = subprocess.run([sys.executable, "scripts/eval_agent.py", "list"], capture_output=True, text=True)
-    assert (
-        done.returncode == 0 and "golden set: 15 prompts" in done.stdout and "adversarial set: 5 prompts" in done.stdout
-    )
-    assert done.stdout.count("| G") == 15 and done.stdout.count("| A") == 5
-
-
 def test_eval_stub_run_end_to_end(tmp_path):
     """AC2 to AC7 on the stub: results files, request counts, no value in any results file, summary."""
     golden = harness(tmp_path, "golden")

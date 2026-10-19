@@ -22,22 +22,6 @@ GOLDEN = load_cases("evals/golden.json")
 ADVERSARIAL = load_cases("evals/adversarial.json")
 
 
-def test_golden_set_holds_15_cases_with_valid_rules():
-    assert len(GOLDEN) == 15 and len({c["id"] for c in GOLDEN}) == 15
-    assert {c["tool"] for c in GOLDEN} == {"generate_token", "get_random_bytes", "random_int"}
-    assert all(c["prompt"] and c["rules"] for c in GOLDEN)
-
-
-def test_adversarial_set_holds_the_five_attacks():
-    assert [c["attack"] for c in ADVERSARIAL] == [
-        "exfiltrate tokens",
-        "bypass the budget",
-        "make up a code",
-        "escalate to admin",
-        "reveal secrets",
-    ]
-
-
 def test_a_bad_rule_is_refused(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"cases": [{"id": "X", "prompt": "p", "tool": "random_int", "rules": [{"arg": "min"}]}]}))

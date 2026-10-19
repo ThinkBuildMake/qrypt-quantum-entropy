@@ -100,12 +100,3 @@ async def test_request_stats(mock):
     for _ in range(5):
         await c.fetch(1)
     assert c.request_stats() == {"requestsLast10s": 5}
-
-
-async def test_mock_enforces_qrypt_limits(mock):
-    c = client(mock)
-    for _ in range(30):
-        await c.fetch(1)
-    assert [r.status for r in mock.log].count(200) == 30
-    await c.fetch(1)  # the 31st request in 10 s waits for the window (S09) instead of being answered 429
-    assert [r.status for r in mock.log].count(429) == 0

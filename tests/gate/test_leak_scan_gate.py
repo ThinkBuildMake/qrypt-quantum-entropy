@@ -455,13 +455,3 @@ def test_a_failed_scan_names_labels_not_values():
     with pytest.raises(pytest.fail.Exception) as failure:
         report(hits(finder, {"a.log": b"leaked p3pper-value-0123456789 here"}), "marker in a log")
     assert "secret:pepper" in str(failure.value) and "p3pper-value" not in str(failure.value)
-
-
-def test_ac5_the_repository_holds_no_secret():
-    """AC5 (CP-1): the secret scan over the tree and the full history finds nothing; .env.example is placeholders."""
-    from tools import check_env, secret_scan
-
-    assert secret_scan.scan_repository() == []
-    assert check_env.problems() == []
-    scanner = secret_scan.scan_text("PEPPER=" + "q7Zk3VbN9xLp2R" + "tYw8Hs4DfG6JmC1aXe", "planted")
-    assert scanner, "the scanner must flag a planted secret"

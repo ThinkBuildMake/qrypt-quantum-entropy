@@ -131,23 +131,7 @@ async def test_error_codes_http_and_tool(code, raising_routes):
     assert json.loads(result.content[0].text) == {"error": code, "message": "refused"}
 
 
-def test_error_codes_cover_the_architecture_list():
-    assert set(HTTP_STATUS) >= {
-        "invalid_argument", "unauthorized", "forbidden", "not_found",
-        "budget_exhausted", "temporarily_unavailable", "upstream_misconfigured", "database_unavailable",
-    }  # fmt: skip
-
-
 PROFILES = [("dev", "DEBUG", "logs/server.log"), ("staging", "INFO", ""), ("prod", "INFO", "")]
-
-
-@pytest.mark.parametrize(("profile", "level", "log_file"), PROFILES)
-def test_profiles_set_their_own_defaults(monkeypatch, profile, level, log_file):
-    for name in ("LOG_LEVEL", "LOG_FILE", "APP_ENV"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("APP_PROFILE", profile)
-    s = Settings(_env_file=None)
-    assert (s.app_env, s.log_level, s.log_file) == (profile, level, log_file)
 
 
 def test_profile_does_not_override_explicit_settings(monkeypatch):
@@ -173,10 +157,6 @@ def test_missing_pepper_stops_start_naming_variable():
     assert result.stdout == ""
 
 
-def test_env_example_lists_every_setting_with_placeholders():
-    assert check_env.problems() == []
-
-
 def test_check_env_flags_missing_and_secret_values():
     text = "APP_ENV=dev\nPEPPER=hunter2hunter2hunter2hunter2\nDATABASE_URL=postgresql://admin:s3cretvalue@h/db\n"
     found = " ".join(check_env.problems(text))
@@ -196,14 +176,6 @@ def test_times_are_utc(empty_db):
     finally:
         pool.close()
     assert stamp.endswith("+00")
-
-
-@pytest.mark.parametrize("name", ["PEPPER", "TOKEN_PEPPER"])
-def test_pepper_is_one_setting_with_two_names(monkeypatch, name):
-    for var in ("PEPPER", "TOKEN_PEPPER"):
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv(name, "alias-check")
-    assert Settings(_env_file=None).token_pepper.get_secret_value() == "alias-check"
 
 
 @pytest.fixture

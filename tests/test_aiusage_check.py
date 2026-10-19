@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from tools import aiusage_check as ac
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,13 +14,11 @@ def problems(text=TEXT):
     return ac.problems(text, ENV, MAKEFILE, exists=lambda p: (ROOT / p).exists())
 
 
-def test_real_file_passes():
-    assert problems() == []
-
-
-@pytest.mark.parametrize("title", ac.SECTIONS)
-def test_a_missing_section_is_reported(title):
-    assert any(title in p for p in problems(TEXT.replace(f"## {title}", "## Other")))
+def test_a_missing_section_is_reported():
+    for title in ac.SECTIONS:
+        assert any(title in p for p in problems(TEXT.replace(f"## {title}", "## Other"))), (
+            f"missing section not reported: {title}"
+        )
 
 
 def test_a_missing_file_is_reported():

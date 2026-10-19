@@ -16,10 +16,6 @@ def problems(guide=GUIDE, env=ENV, makefile=MAKEFILE):
     return guide_check.problems(guide, env, makefile)
 
 
-def test_real_guide_passes():
-    assert problems() == []
-
-
 @pytest.mark.parametrize(
     ("old", "new", "expect"),
     [

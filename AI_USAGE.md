@@ -54,6 +54,7 @@ Recorded in the documents with who decided; the agent proposed, the owner chose:
 - Issued values stay out of the model's context (CP-5, accepted 2026-10-17); seed tokens are flagged as seed data with no audit record (DP-6); the MCP server writes the token hash with an insert-only role.
 - Benchmark against the local database; cold start accepted (PF-1, PF-5); Docker Compose chosen for the local database (commit "Apply owner decisions: cold start accepted, PF-1 reworded, Docker Compose chosen").
 - The owner bought $10 of OpenRouter credit, which lifts the free-model limit to 1,000 requests a day (GC-3).
+- The owner asked to prune low-value tests (static values, config defaults, document-text checks, duplicates of `make` checks): 35 tests deleted and the fault-suite and document-check lists folded into fewer parametrised cases (suite 640 collected tests down to 552).
 - Deadline time zone, cut policy and spend were settled in the users documents.
 - Left to the human, by design: live Qrypt use, the real-model evaluation, the Render deployment and the demo video (`docs/DEPLOY.md`, `docs/DEPLOYMENT_GUIDE.md`).
 

@@ -78,16 +78,3 @@ def test_gate_seed_token_hash(seeded_env, db):
         stored = {bytes(h) for (h,) in conn.execute("SELECT token_hash FROM tokens")}
     for owner, value in printed:
         assert tokens.hash_token(owner, value) in stored
-
-
-def test_seed_names_are_the_pinned_synthetic_ones(seeded_env, db):
-    assert run(seeded_env).returncode == 0
-    listed = run(seeded_env, "list-names").stdout.split("\n")
-    assert [line for line in listed if line] == [
-        "admin admin",
-        "client billing-agent",
-        "client support-agent",
-        "seed-token-owner seed-owner-1",
-        "seed-token-owner seed-owner-2",
-        "seed-token-owner seed-owner-3",
-    ]

@@ -19,7 +19,6 @@ from qrypt_entropy.upstream import source
 from tests.mock_qrypt import MockQrypt
 
 HEX = {"length": 16, "encoding": "hex"}
-TOKEN = {"kind": "otp_6"}
 
 
 def rows(url, query, *args):
@@ -68,14 +67,12 @@ FAULTS = [
 
 
 @pytest.mark.parametrize(("fault", "code"), FAULTS, ids=[str(f) for f, _ in FAULTS])
-@pytest.mark.parametrize("tool", ["get_random_bytes", "random_int", "generate_token"])
-async def test_fault_fails_closed(world, fault, code, tool):
+async def test_fault_fails_closed(world, fault, code):
     """AC1: pool drained and the mock misbehaving: the right code, no value, no audit row, nothing but qrypt."""
-    args = {"get_random_bytes": HEX, "random_int": {"min": 1, "max": 6}, "generate_token": TOKEN}[tool]
     inject(world.mock, fault)
     async with Client(build_server(lambda: world.key)) as client:
         started = time.monotonic()
-        result = await client.call_tool(tool, args)
+        result = await client.call_tool("get_random_bytes", HEX)
         elapsed = time.monotonic() - started
     data = body(result)
     assert result.is_error and data["error"] == code

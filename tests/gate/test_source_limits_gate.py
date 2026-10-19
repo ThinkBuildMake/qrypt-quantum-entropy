@@ -5,7 +5,6 @@ import logging
 import random
 import time
 
-import httpx
 import pytest
 
 from qrypt_entropy.errors import RateLimited
@@ -111,22 +110,3 @@ async def test_rate_ceiling_100():
     assert len(times) >= 103
     busiest = max(sum(1 for u in times if t <= u < t + 10) for t in times)
     assert busiest <= 30
-
-
-def test_token_setting_accepts_both_names(monkeypatch):
-    from qrypt_entropy.config import Settings
-
-    monkeypatch.delenv("QRYPT_API_KEY", raising=False)  # the suite points it at its mock
-    monkeypatch.setenv("QRYPT_API_TOKEN", "old-name")
-    assert Settings(_env_file=None).qrypt_api_token.get_secret_value() == "old-name"
-    monkeypatch.setenv("QRYPT_API_KEY", "new-name")
-    assert Settings(_env_file=None).qrypt_api_token.get_secret_value() == "new-name"
-
-
-async def test_mock_answers_429_to_the_31st_request_in_10s():
-    async with MockQrypt(clock=lambda: 5.0) as mock, httpx.AsyncClient() as raw:  # a frozen clock: one window
-        for _ in range(31):
-            await raw.get(
-                f"{mock.url}/api/v1/quantum-entropy?size=1", headers={"Authorization": f"Bearer {mock.token}"}
-            )
-    assert [r.status for r in mock.log] == [200] * 30 + [429]

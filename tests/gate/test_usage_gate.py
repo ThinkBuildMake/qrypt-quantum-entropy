@@ -7,7 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.engine import make_url
 
-from qrypt_entropy.errors import InvalidArgument
 from qrypt_entropy.service import access, meter
 from qrypt_entropy.transport.http_app import app
 
@@ -93,13 +92,6 @@ def test_ac5_missing_or_malformed_body_is_refused(http, keys):
     for content in (b"", b"[]", b'{"cap":5}', b"{not json"):
         r = http.put("/admin/budget", headers={**keys["admin"], "Content-Type": "application/json"}, content=content)
         assert (r.status_code, r.json()["error"]) == (400, "invalid_argument")
-
-
-def test_set_budget_function_rejects_bad_values(db):
-    for bad in (-1, 1.5, "many", True, 2**63):
-        with pytest.raises(InvalidArgument):
-            meter.set_budget(bad)  # type: ignore[arg-type]
-    meter.close_pools()
 
 
 @pytest.mark.parametrize(("method", "body"), [("GET", None), ("PUT", {"capKib": 5})], ids=["usage", "budget"])

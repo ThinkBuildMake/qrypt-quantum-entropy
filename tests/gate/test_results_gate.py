@@ -120,16 +120,19 @@ def test_results_refuse_a_stub_run_in_the_real_directory(tmp_path):
         make_results.build(tree(tmp_path, real_docs(real=False)))
 
 
-@pytest.mark.parametrize(
-    "section",
-    ["Coverage", "Throughput and error rate", "Latency", "KiB per upstream request", "Golden set", "Adversarial set"],
-)
-def test_results_check_names_a_missing_section(tmp_path, section):
+def test_results_check_names_a_missing_section(tmp_path):
     """AC4: remove one section, the check names it."""
     text = make_results.build(tree(tmp_path))
-    kept = [part for part in text.split("\n## ") if not part.startswith(section)]
-    problems = results_check.check("\n## ".join(kept))
-    assert problems == [f"missing section: {section}"]
+    for section in [
+        "Coverage",
+        "Throughput and error rate",
+        "Latency",
+        "KiB per upstream request",
+        "Golden set",
+        "Adversarial set",
+    ]:
+        kept = [part for part in text.split("\n## ") if not part.startswith(section)]
+        assert results_check.check("\n## ".join(kept)) == [f"missing section: {section}"]
 
 
 def test_results_check_exit_code_names_the_section(tmp_path, capsys):

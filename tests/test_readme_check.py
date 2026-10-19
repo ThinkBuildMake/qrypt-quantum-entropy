@@ -19,14 +19,6 @@ def problems(readme=README, client=CLIENT):
     return readme_check.problems(readme, ENV, MAKEFILE, client)
 
 
-def test_real_readme_passes():
-    assert problems() == []
-
-
-def test_first_line_is_at_most_120_characters_with_its_newline():
-    assert len(README.split("\n", 1)[0]) + 1 <= 120
-
-
 @pytest.mark.parametrize(
     ("old", "new", "expect"),
     [

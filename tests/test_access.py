@@ -121,12 +121,3 @@ def test_missing_hash_secret_refuses_rather_than_hashing_with_nothing(monkeypatc
     with pytest.raises(access.TemporarilyUnavailable):
         access.hash_key("k")
     get_settings.cache_clear()
-
-
-def test_only_access_writes_credentials():
-    import pathlib
-
-    for path in pathlib.Path("src").rglob("*.py"):
-        text = path.read_text().lower()
-        if path.name != "access.py":
-            assert "insert into credentials" not in text and "update credentials" not in text, path

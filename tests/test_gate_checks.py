@@ -11,10 +11,6 @@ def write(root, rel, text):
     path.write_text(text)
 
 
-def test_ac8_import_check_passes_on_the_repository():
-    assert find_violations("src") == []
-
-
 def test_ac8_import_check_flags_a_module_importing_a_transport(tmp_path):
     write(tmp_path, "service/pool.py", "from qrypt_entropy.transport import mcp_server\n")
     violations = find_violations(tmp_path)

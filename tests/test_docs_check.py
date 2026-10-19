@@ -16,19 +16,11 @@ def check(**changes: str) -> list[str]:
     return dc.problems({**FILES, **changes}, ROUTES, TOOLS)[0]
 
 
-def test_real_documents_pass():
-    assert dc.problems(FILES, ROUTES, TOOLS)[0] == []
-
-
-def test_the_registered_api_is_what_the_reference_is_checked_against():
-    assert "GET /health" in ROUTES and "POST /verify" in ROUTES
-    assert TOOLS == {"get_random_bytes", "random_int", "generate_token"}
-
-
-@pytest.mark.parametrize("title", list(dc.SECTIONS))
-def test_a_missing_section_is_reported(title):
-    name = f"docs/technical/{dc.SECTIONS[title]}"
-    assert any(title in p for p in check(**{name: FILES[name].replace(f"# {title}\n", "# Something else\n")}))
+def test_a_missing_section_is_reported():
+    for title, file in dc.SECTIONS.items():
+        name = f"docs/technical/{file}"
+        problems = check(**{name: FILES[name].replace(f"# {title}\n", "# Something else\n")})
+        assert any(title in p for p in problems), f"missing section not reported: {title}"
 
 
 def test_a_missing_file_is_reported():
@@ -59,28 +51,28 @@ def test_an_undocumented_or_invented_tool_is_reported():
     )
 
 
-@pytest.mark.parametrize("phrase", dc.POLICY_PHRASES)
-def test_a_missing_policy_phrase_is_reported(phrase):
+def test_a_missing_policy_phrase_is_reported():
     text = FILES[SECURITY]
-    stripped = text.replace(phrase, "x").replace(phrase.capitalize(), "x").replace(phrase.title(), "x")
-    assert any(phrase in p for p in check(**{SECURITY: stripped}))
+    for phrase in dc.POLICY_PHRASES:
+        stripped = text.replace(phrase, "x").replace(phrase.capitalize(), "x").replace(phrase.title(), "x")
+        assert any(phrase in p for p in check(**{SECURITY: stripped})), f"missing policy phrase not reported: {phrase}"
 
 
-@pytest.mark.parametrize("phrase", dc.NOT_BUILT)
-def test_a_missing_not_built_item_is_reported(phrase):
+def test_a_missing_not_built_item_is_reported():
     text = dc.under_heading(FILES[LIMITS], r"not built in v1")
     assert text
-    stripped = FILES[LIMITS].replace(text, text.replace(phrase, "x").replace(phrase.capitalize(), "x"))
-    assert any(phrase in p for p in check(**{LIMITS: stripped}))
+    for phrase in dc.NOT_BUILT:
+        stripped = FILES[LIMITS].replace(text, text.replace(phrase, "x").replace(phrase.capitalize(), "x"))
+        assert any(phrase in p for p in check(**{LIMITS: stripped})), f"missing not-built item not reported: {phrase}"
 
 
-@pytest.mark.parametrize("pattern", [pattern for _, pattern, _ in dc.HEADINGS])
-def test_each_required_heading_is_checked(pattern):
-    name, _, what = next(h for h in dc.HEADINGS if h[1] == pattern)
-    path = f"docs/technical/{name}"
-    text = FILES[path]
-    heading = next(h for h in dc.headings(text) if dc.re.search(pattern, h, dc.re.I))
-    assert any(what in p for p in check(**{path: text.replace(heading, "Renamed")}))
+def test_each_required_heading_is_checked():
+    for name, pattern, what in dc.HEADINGS:
+        path = f"docs/technical/{name}"
+        text = FILES[path]
+        heading = next(h for h in dc.headings(text) if dc.re.search(pattern, h, dc.re.I))
+        problems = check(**{path: text.replace(heading, "Renamed")})
+        assert any(what in p for p in problems), f"missing heading not reported: {what}"
 
 
 def test_a_secret_in_the_docs_is_reported():

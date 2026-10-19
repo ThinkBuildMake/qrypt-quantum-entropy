@@ -50,12 +50,3 @@ async def test_after_shutdown_a_take_is_refused_and_no_new_pool_starts():
     assert pool._pool is None
     pool.reopen()
     assert pool.get_pool() is not None
-
-
-def test_wait_for_orphans_logs_when_it_times_out(monkeypatch):
-
-    monkeypatch.setattr(pool, "_orphans", 1)
-    lines = []
-    monkeypatch.setattr(pool.log, "error", lambda event, **fields: lines.append((event, fields)))
-    pool.wait_for_orphans(0.05)
-    assert lines and lines[0][0] == "orphan_reservations_unsettled" and lines[0][1]["count"] == 1

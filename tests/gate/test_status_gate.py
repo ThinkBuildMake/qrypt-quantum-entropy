@@ -5,7 +5,6 @@ Pool, call and request statistics are stubbed; the database is real.
 
 import asyncio
 import json
-import threading
 
 import psycopg
 import pytest
@@ -145,32 +144,6 @@ def test_status_write_fails(stats, db, monkeypatch, tmp_path):
     written = rows(db)
     assert len(written) == 1  # the next tick wrote, and it saw the call made during the failure
     assert written[0][5]["callsByTool"] == {"get_random_bytes": 1}
-
-
-def test_status_readers_run_on_the_event_loop(stats, db):
-    threads = []
-
-    def spy(read):
-        def wrapper():
-            threads.append(threading.current_thread())
-            return read()
-
-        return wrapper
-
-    reporter = StatusReporter(spy(stats.pool), spy(stats.call_stats), spy(stats.request_stats))
-    main = []
-
-    async def go():
-        main.append(threading.current_thread())
-        await reporter.report()
-
-    asyncio.run(go())
-    assert len(threads) == 3 and all(t is main[0] for t in threads)
-
-
-def test_report_once_writes_a_row(db):
-    asyncio.run(status.report_once())
-    assert len(rows(db)) == 1
 
 
 def test_status_restart_new_row(stats, db):
