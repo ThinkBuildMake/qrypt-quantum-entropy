@@ -122,9 +122,12 @@ def test_backup_failure_leaves_no_file(filled, tmp_path):
     bad = run(["make", "backup", f"BACKUP_DIR={out}"], env={**env, "BACKUP_URL": env["BACKUP_URL"] + "x"})
     assert bad.returncode != 0 and BACKUP_PASSWORD not in bad.stdout + bad.stderr
     assert list(out.iterdir()) == []
-    no_key = run(
-        ["make", "backup", f"BACKUP_DIR={out}"], env={k: v for k, v in env.items() if k != "BACKUP_AGE_RECIPIENT"}
-    )
+    # Run from tmp_path: the repository commits backup/age-recipient.txt, which would otherwise be found.
+    no_key = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/backup.py"), str(out)],
+        cwd=tmp_path, env={k: v for k, v in env.items() if k != "BACKUP_AGE_RECIPIENT"},
+        capture_output=True, text=True, timeout=120,
+    )  # fmt: skip
     assert no_key.returncode != 0 and list(out.iterdir()) == []
 
 
