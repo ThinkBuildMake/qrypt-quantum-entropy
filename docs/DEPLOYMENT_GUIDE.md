@@ -208,7 +208,7 @@ the role passwords again) is in `docs/BACKUP.md`. The `pg_dump` major version mu
 The live run, step by step, is in `docs/DEPLOY.md` ("the live run"). Before it: `psql "$DATABASE_URL" -c 'SELECT used_kib, cap_kib FROM budget'`
 should show the meter of the database you are using; a **new database starts at 0 but earlier spend still counts against the
 10,240 KiB**, so the running total below is what you check against the cap, not the meter. One live call costs the 1 KiB
-startup check plus a refill of 64 KiB or more (65 with the defaults). The admin API can lower the cap (`PUT /admin/budget`),
+startup check plus the first prefetch of 96 KiB (97 with the defaults; each server start spends about this much). The admin API can lower the cap (`PUT /admin/budget`),
 for example to the headroom the log says remains. Never store a token value or key in this table.
 
 Add one row for every database in use, with the KiB it has spent when you finish with it. Running total is the sum of the KiB spent column so far.

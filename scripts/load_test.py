@@ -33,11 +33,11 @@ from mcp.client.stdio import StdioServerParameters  # noqa: E402
 from psycopg import sql  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
 
+from qrypt_entropy.service.pool import REFILL_KIB  # noqa: E402
 from tests.mock_qrypt import LIMIT, WINDOW_S, MockQrypt  # noqa: E402
 
 MOCK_LATENCY_S = 0.2
 TEST_CAP_KIB = 100_000_000  # the test database's cap: large enough that the run never reaches it
-EXPECTED_ERRORS = {"invalid_argument", "unauthorized"}
 CALLS = [  # mixed evenly across the three tools; every call asks for 64 bytes or fewer (PF-1)
     ("get_random_bytes", {"length": 64, "encoding": "hex"}),
     ("random_int", {"min": 1, "max": 1000}),
@@ -172,10 +172,10 @@ async def call(client: Client, tool: str, args: dict) -> tuple[float, str | None
 
 
 async def warm_up(client: Client, mock: MockQrypt) -> None:
-    """Wait for the first 64 KiB refill, so the pool is warm (PF-1 measures a warm pool)."""
+    """Wait for the first refill, so the pool is warm (PF-1 measures a warm pool)."""
     for _ in range(100):
         await call(client, *CALLS[0])
-        if sum(1 for r in mock.log if r.size == "64" and r.status == 200):
+        if sum(1 for r in mock.log if r.size == str(REFILL_KIB) and r.status == 200):
             return
         await asyncio.sleep(0.1)
     raise SystemExit("the pool never filled")
@@ -239,35 +239,44 @@ async def concurrent(args) -> dict:
     with Run() as run:
         env = environment(run.url)
         ok, errors, ms = 0, {}, []
+        injected = {"sent": 0, "answered_invalid_argument": 0}  # deliberate bad calls, not server errors
         async with Client(run.params()) as client:
             await warm_up(client, run.mock)
             started = time.perf_counter()
-            issued = 0
+
+            def total() -> int:
+                return ok + sum(errors.values()) + injected["sent"]
 
             async def caller(n: int) -> None:
-                nonlocal ok, issued
+                nonlocal ok
                 i = n
-                while time.perf_counter() - started < args.seconds or ok + sum(errors.values()) < args.min_calls:
+                while time.perf_counter() - started < args.seconds or total() < args.min_calls:
                     i += args.callers
-                    tool, arguments = INVALID if i % 50 == 0 else CALLS[i % 3]
+                    bad = i % 50 == 0
+                    tool, arguments = INVALID if bad else CALLS[i % 3]
                     took, error = await call(client, tool, arguments)
                     ms.append(took)
+                    if bad:
+                        injected["sent"] += 1
+                        injected["answered_invalid_argument"] += error == "invalid_argument"
+                        error = None if error == "invalid_argument" else error or "accepted_invalid_call"
+                    elif not error:
+                        ok += 1
                     if error:
                         errors[error] = errors.get(error, 0) + 1
-                    else:
-                        ok += 1
 
             await asyncio.gather(*(caller(n) for n in range(args.callers)))
             elapsed = time.perf_counter() - started
             await asyncio.sleep(1.2)  # lets the probe flush its last file
         warm_ok = run.query("SELECT count(*) FROM issuances")[0][0] - ok
-        total_calls = ok + sum(errors.values())
-        server_errors = {c: n for c, n in errors.items() if c not in EXPECTED_ERRORS}
+        total_calls = ok + sum(errors.values()) + injected["sent"]
+        server_errors = errors
         ms.sort()
         check(
-            "AC2 no error other than invalid_argument or unauthorized",
-            not server_errors,
-            f"{total_calls} calls in {elapsed:.1f} s with {args.callers} in flight; errors {errors or 'none'}",
+            "AC2 zero server errors (injected invalid calls are counted separately and must all be refused)",
+            not server_errors and injected["sent"] == injected["answered_invalid_argument"],
+            f"{total_calls} calls in {elapsed:.1f} s with {args.callers} in flight; server errors {errors or 'none'}; "
+            f"{injected['sent']} injected invalid calls, {injected['answered_invalid_argument']} refused",
         )
         check(
             "AC2 at least the asked duration and calls",
@@ -281,10 +290,12 @@ async def concurrent(args) -> dict:
         meter_ratio = (used_kib - 1) / upstream
         served_kib = run.query("SELECT sum(bytes_consumed) FROM issuances")[0][0] / 1024
         check(
-            "AC3 KiB per upstream request, startup check excluded, is 64 or more",
-            upstream > 0 and meter_ratio >= 64 and all(int(r.size) >= 64 for r in refills),
-            f"budget meter {used_kib - 1} KiB fetched / {upstream} requests = {meter_ratio:.2f}; "
-            f"{served_kib:.1f} KiB actually served",
+            "AC3 KiB SERVED per upstream request, startup check excluded, is 64 or more",
+            upstream > 0
+            and (meter_ratio if args.smoke else served_kib / upstream) >= 64
+            and all(int(r.size) >= 64 for r in refills),
+            f"{served_kib:.1f} KiB served / {upstream} requests = {served_kib / upstream:.2f}; "
+            f"budget meter {used_kib - 1} KiB fetched = {meter_ratio:.2f} per request",
         )
         biggest = max_in_window([r.at for r in run.mock.log])
         rejected = sum(1 for r in run.mock.log if r.status == 429)
@@ -339,9 +350,11 @@ async def concurrent(args) -> dict:
             "calls": total_calls,
             "successful_calls": ok,
             "throughput_calls_per_s": round(total_calls / elapsed, 1),
-            "errors_by_code": errors,
+            "server_errors_by_code": errors,
+            "injected_invalid_calls": injected,
             "server_error_rate": round(sum(server_errors.values()) / total_calls, 6),
-            "note_errors": "about 1 call in 50 is deliberately invalid (length 0) and answers invalid_argument",
+            "note_errors": "about 1 call in 50 is deliberately invalid (length 0): each must answer invalid_argument "
+            "and is reported under injected_invalid_calls, not as a server error",
             "latency_under_load_ms": {
                 "p50": percentile(ms, 0.5),
                 "p95": percentile(ms, 0.95),
@@ -372,6 +385,7 @@ def main() -> int:
     parser.add_argument("--seconds", type=float, default=30)
     parser.add_argument("--callers", type=int, default=100)
     parser.add_argument("--min-calls", type=int, default=10_000)
+    parser.add_argument("--smoke", action="store_true", help="short run: AC3 checks the fetched ratio, not the served")
     parser.add_argument("--p95", type=float, default=float(os.environ.get("GATE_P95_MS", 50)))
     parser.add_argument("--out")
     args = parser.parse_args()

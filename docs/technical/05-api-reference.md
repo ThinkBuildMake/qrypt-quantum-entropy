@@ -143,6 +143,19 @@ Admin key. `reference` must be a UUID (400 otherwise); 404 `not_found` when no s
 
 `token` is null when no token was stored for the issuance. No value and no hash is ever returned.
 
+### Route: POST /admin/trace-token
+
+Admin key. Request `{"owner": "<1 to 256 characters>", "value": "<the token>"}`, the same shape as `POST /verify`. The
+value is hashed with the token pepper (the way redemption does), compared with the owner's stored hashes, and never
+logged or returned. 200 with the same body as `GET /admin/issuances/{reference}` for the issuance that produced the
+token; this is how an admin holding only an owner and a code finds the reference. 404 `not_found` ("no such token") for
+an unknown token and for a seed token, which has no issuance, so the answer says nothing more. It is not a
+redemption (the token is not marked used), but a failed lookup is recorded as an `unknown` outcome and counts toward the
+same per-owner failure limit as `POST /verify` (AZ-6); at the limit it answers 503 `temporarily_unavailable`. The request
+shape is checked before the key, as on every route here (a malformed body from an unauthenticated caller gets 400, never
+any token information). `TRACE_VALUE=<code> make trace OWNER=<owner>` does the same lookup from the command line (needs
+`DATABASE_URL` and `PEPPER`; the value comes from the environment so it stays out of the process list).
+
 ### Route: POST /admin/clients
 
 Admin key. Request `{"name": "<1 to 256 characters>"}`. 201 with

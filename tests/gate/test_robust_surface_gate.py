@@ -417,6 +417,7 @@ HOSTED = {  # method, path: (role that may call it, the response keys it may car
         "admin",
         {"reference", "client", "tool", "bytesConsumed", "createdAt", "batches", "token"},
     ),
+    ("POST", "/admin/trace-token"): ("admin", {"error", "message"}),  # the sample token is unknown: a 404 body
     ("POST", "/admin/clients"): ("admin", {"client", "key", "name", "id", "role", "createdAt", "revokedAt"}),
     ("POST", "/admin/clients/{client_id}/revoke"): (
         "admin",
@@ -449,6 +450,7 @@ async def test_no_hosted_route_returns_an_entropy_derived_value(real):
             url = url.replace(name, value)
         body = {
             "/verify": {"owner": "o", "value": "000000"},
+            "/admin/trace-token": {"owner": "o", "value": "000000"},
             "/admin/budget": {"capKib": 1000000},
             "/admin/clients": {"name": "once"},
         }.get(path)
@@ -509,6 +511,9 @@ def test_route_latency_p95(real):
     cap = meter.get_usage()["budget"]["capKib"]
     plan = {
         "POST /verify": lambda i: http.post("/verify", headers=client, json={"owner": f"lat-{i}", "value": f"{i:06d}"}),
+        "POST /admin/trace-token": lambda i: http.post(
+            "/admin/trace-token", headers=admin, json={"owner": f"lat-{i}", "value": f"{i:06d}"}
+        ),
         "GET /metrics": lambda i: http.get("/metrics", headers=admin),
         "GET /admin/usage": lambda i: http.get("/admin/usage", headers=admin),
         "PUT /admin/budget": lambda i: http.put("/admin/budget", headers=admin, json={"capKib": cap}),

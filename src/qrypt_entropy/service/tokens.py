@@ -16,7 +16,7 @@ import uuid
 import psycopg
 
 from qrypt_entropy.config import get_settings
-from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable
+from qrypt_entropy.errors import AppError, InvalidArgument, NotFound, RateLimited, TemporarilyUnavailable
 from qrypt_entropy.storage import db
 
 MAX_OWNER_LENGTH = 256
@@ -90,6 +90,36 @@ def _record(conn, token_id, owner: str, outcome: str) -> str:
         (uuid.uuid4(), token_id, owner, outcome),
     )
     return outcome
+
+
+def find_issuance(owner: str, value: str) -> str:
+    """The issuance reference of the owner's stored token for `value` (F5b trace). The value is only hashed. An unknown
+    token and a seed token (it has no issuance) raise the same NotFound. Failed lookups count against the same
+    per-owner failure limit as redemption (AZ-6), so the lookup cannot be used to guess a code before redeeming it."""
+    check_owner(owner)
+    presented = hash_token(owner, value)
+    settings = get_settings()
+    with db.connection() as conn:
+        _lock_owner(conn, owner, settings.rate_limit_lock_timeout_ms)
+        failures = conn.execute(
+            "SELECT count(*) FROM redemption_outcomes WHERE owner = %s AND outcome = ANY(%s)"
+            " AND attempted_at > clock_timestamp() - make_interval(secs => %s)",
+            (owner, list(FAILED_OUTCOMES), settings.rate_limit_window_seconds),
+        ).fetchone()[0]
+        if failures >= settings.rate_limit_max_failures:
+            _record(conn, None, owner, "rate_limited")
+            limited = True
+        else:
+            limited = False
+            rows = conn.execute("SELECT issuance_id, token_hash FROM tokens WHERE owner = %s", (owner,)).fetchall()
+            found = [row[0] for row in rows if hashes_equal(bytes(row[1]), presented) and row[0] is not None]
+            if not found:
+                _record(conn, None, owner, "unknown")
+    if limited:
+        raise RateLimited("too many failed attempts for this owner; try again later")
+    if not found:
+        raise NotFound("no such token")
+    return str(found[0])
 
 
 def redeem(owner: str, value: str) -> str:

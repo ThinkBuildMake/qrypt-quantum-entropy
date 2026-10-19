@@ -36,11 +36,18 @@ def test_load_latency_smoke(tmp_path):
 
 def test_load_concurrent_smoke(tmp_path):
     """AC2 to AC7 on a short run: 20 callers, 4 s, at least 600 calls."""
-    doc = run_load(tmp_path, "concurrent", "--callers", "20", "--seconds", "4", "--min-calls", "600")
-    assert doc["server_error_rate"] == 0 and set(doc["errors_by_code"]) <= {"invalid_argument", "unauthorized"}
+    doc = run_load(tmp_path, "concurrent", "--callers", "20", "--seconds", "4", "--min-calls", "600", "--smoke")
+    assert doc["server_error_rate"] == 0 and doc["server_errors_by_code"] == {}
+    sent = doc["injected_invalid_calls"]
+    assert sent["sent"] > 0 and sent["sent"] == sent["answered_invalid_argument"]
+    assert doc["calls"] == doc["successful_calls"] + sent["sent"]
     assert doc["kib_fetched_per_upstream_request"] >= 64
     assert doc["max_upstream_requests_in_10s"] <= 30
     assert doc["pool_max_level_kib"] <= 128
+    n = doc[
+        "upstream_requests_excluding_startup_check"
+    ]  # served can fall short of fetched only by what is still pooled
+    assert 96 * n - 129 <= doc["kib_served_per_upstream_request"] * n <= doc["kib_fetched_per_upstream_request"] * n
     assert doc["overlapping_ranges"] == 0
     assert doc["issuances_rows"] >= doc["successful_calls"]
     GATE_STATS["load smoke calls, max upstream requests in 10 s"] = (

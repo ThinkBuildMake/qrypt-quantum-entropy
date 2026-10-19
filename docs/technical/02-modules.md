@@ -70,8 +70,9 @@ is the real one and `TestSource` is a second, deterministic source labelled `tes
 
 Holds fetched entropy in memory and hands each byte out once.
 
-- Marks: low 32 KiB, high 128 KiB (settings). A refill asks for 64 KiB, less when the pool has less headroom below the
-  high mark. At most one refill runs at a time.
+- Marks: low 32 KiB, high 128 KiB (settings). A refill asks for 96 KiB (so the KiB served per request can reach 64, PF-3), less when the pool has less headroom below the
+  high mark. At most one refill runs at a time. Each start spends about 97 KiB of budget (1 KiB check plus the 96 KiB first prefetch). The
+  pool logs `pool_marks_too_close` at start when high minus low is under the refill size.
 - `take(n)` removes `n` bytes in one step, or none. It returns the bytes and their `BatchSlice` list (batch id, byte
   offset, count). If the pool cannot cover `n`, it waits up to 1.8 s for a refill, then raises `PoolStarved` whose code
   is the reason (`temporarily_unavailable`, `budget_exhausted` or `upstream_misconfigured`), so the error is out in
@@ -79,7 +80,7 @@ Holds fetched entropy in memory and hands each byte out once.
 - Refill failures are retried after a pause that doubles from 0.5 s to 10 s with jitter. A 401 is not retried until a
   take asks.
 - `start()` runs a 1 KiB startup check (DE-5); a failure is logged, not raised. Its bytes join the pool but are served
-  after every refill batch, so a client sees a 64 KiB batch id rather than the 1 KiB check.
+  after every refill batch, so a client sees a refill batch id rather than the 1 KiB check.
 - `status()` is `ok`, `degraded` (a refill failed but the pool still serves), `failing` (empty or a call is waiting) or
   `misconfigured` (401).
 - Pooled bytes live in this process's memory only (CP-2) and are discarded at stop or restart. KiB reserved for them are

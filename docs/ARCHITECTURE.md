@@ -749,7 +749,7 @@ Meter.reserve and Meter.markBatch, and Entropy source.fetch. After the budget is
 - A byte offset in any batch is served to at most one caller, with 100 callers over 10,000 calls (VR-1).
 - A call that the pool cannot cover removes 0 bytes (VR-8).
 - Level never exceeds the high mark, and a refill starts when it falls below the low mark. Both are configurable (SC-1).
-- A refill asks for at least 64 KiB while the budget allows (PF-3).
+- A refill asks for 96 KiB (at least 64) while the budget allows, so the KiB served per upstream request reaches 64 (PF-3).
 - When the pool first cannot cover a call, and when the resulting error is returned, an event is logged (OB-8).
 - No pooled byte is written to disk, a log or an error message (CP-2, OB-3).
 - Serving bytes already in the pool after the budget is spent follows Decision 2 (REQUIREMENTS open item 5, assumption A-13).
@@ -810,7 +810,17 @@ Response   200 { reference, client: { id, name }, tool, bytesConsumed, createdAt
            the token hash and any value are never returned
 Errors     401 unauthorized
            403 forbidden
-           404 not_found — no such reference
+           404 not_found, no such reference
+
+traceToken   POST /admin/trace-token                 serves FR-4.1, F5b (H02)
+Caller     an admin key
+Request    { owner: string, value: string }, as POST /verify; the value is hashed with the token pepper, never logged or echoed
+Response   200 the getIssuance body of the issuance that produced the token
+Errors     401 unauthorized
+           403 forbidden
+           400 invalid_argument, a malformed body
+           404 not_found "no such token", the same for an unknown token and a seed token (no issuance)
+           503 temporarily_unavailable once the owner has hit the redemption failure limit (AZ-6); failed lookups count
            (more may be added)
 ```
 

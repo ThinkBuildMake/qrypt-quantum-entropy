@@ -22,7 +22,7 @@ from qrypt_entropy.upstream import source
 
 log = get_logger("qrypt_entropy.pool")
 KIB = 1024
-REFILL_KIB = 64  # PF-3
+REFILL_KIB = 96  # PF-3: most that fits under the high mark from below the low mark; served per request must reach 64
 WAIT_S = 1.8  # RL-1, RL-3: how long a take waits for a refill; the error is out within 2 s
 _orphans = 0  # cancelled reservations not yet settled; shutdown waits for them (a late settle would reopen a DB pool)
 _orphans_settled = threading.Condition()
@@ -142,6 +142,10 @@ class Pool:
     async def start(self) -> None:
         """Run the 1 KiB startup check (DE-5), then begin the refill loop. A failed check is logged, never raised."""
         self._stopped, self._error, self._last_success_at = False, None, None
+        if self.high - self.low < REFILL_KIB * KIB:
+            log.warning(
+                "pool_marks_too_close", low_kib=self.low // KIB, high_kib=self.high // KIB, refill_kib=REFILL_KIB
+            )
         batch = None
         try:
             await asyncio.to_thread(meter.settle_stale)  # batches a killed process left 'requested'

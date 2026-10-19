@@ -21,6 +21,11 @@ Two roles enforced server-side (AZ-1). `client` may call the tools and `POST /ve
 every `/admin/*` route and `/metrics`. `/health` is open. A revoked key is refused on its next call. Role checks are
 application code; the database roles in 04 are a second, independent limit on what each process can do.
 
+`POST /admin/trace-token` lets an admin who holds an owner and a code find its issuance. That could be used to test
+guesses at a code before redeeming it, so a failed lookup is recorded as an `unknown` outcome and counts toward the same
+per-owner failure limit as `/verify` (AZ-6). What remains is admin-only: an admin can still learn that a guess is right
+(a hit) without redeeming, up to the limit. `docs/DEVIATIONS.md` H02-2.
+
 ### Logging
 
 One JSON object per line with timestamp, level, event and client id when known. The MCP server logs to its error stream

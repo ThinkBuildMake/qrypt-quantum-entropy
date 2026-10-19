@@ -153,3 +153,9 @@ def revoke_client(client_id: str) -> dict:
     except ValueError:
         raise NotFound("no such client") from None
     return access.revoke_client(str(parsed))
+
+
+@app.post("/admin/trace-token", dependencies=[Depends(require_roles("admin"))])
+def trace_token(body: VerifyBody) -> dict:
+    """F5b: an owner and a token value in, the issuance provenance out. The value is hashed and never echoed."""
+    return issuance.get_issuance(tokens.find_issuance(body.owner, body.value))

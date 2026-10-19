@@ -19,8 +19,9 @@ It does not find:
 
 It also removes ordinary long numbers (a phone number, a timestamp), which errs on the safe side. The second line of
 defence is redemption: a code the product never issued comes back `unknown` from `POST /verify`. The golden-set and
-adversarial evaluation that would measure the scan (EV-1 to EV-3) is not part of this build `[unverified]`; the scan
-is tested against a scripted model only.
+adversarial evaluation that measures the scan (EV-1 to EV-3, S40) is part of this build (`make eval-golden`,
+`make eval-adversarial`, `make eval-summary`). Without an OpenRouter key it runs against a scripted stub that only
+proves the harness works; the real-model numbers are `[unverified]` until a keyed run.
 
 ## Trust boundary of the issuing role
 

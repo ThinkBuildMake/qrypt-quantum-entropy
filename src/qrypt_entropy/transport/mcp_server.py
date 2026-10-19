@@ -5,17 +5,17 @@ import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Annotated, Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from qrypt_entropy.config import MCP_SERVER_SECRETS, ConfigError, get_settings
 from qrypt_entropy.errors import AppError, InvalidArgument, TemporarilyUnavailable, Unauthorized
 from qrypt_entropy.logs import configure_logging, get_logger, register_secret
 from qrypt_entropy.models import IssuedValue, Principal
-from qrypt_entropy.service import access, issuance, pool
+from qrypt_entropy.service import access, issuance, pool, tokens
 from qrypt_entropy.service.status import default_reporter
 from qrypt_entropy.storage.db import close_pools
 
@@ -95,20 +95,57 @@ def build_server(key_provider: Callable[[], str | None], *, run_pool: bool = Tru
         log.info("tool_call", tool=name, client_id=principal.client_id, duration_ms=_ms(started))
         return result
 
+    settings = get_settings()
+    max_bytes, max_expiry, safe = settings.per_call_max_bytes, settings.token_expiry_max_seconds, issuance.SAFE_INT
+    length_f = Field(ge=1, le=max_bytes, description=f"Number of random bytes to return, 1 to {max_bytes}.")
+    encoding_f = Field(description="How the bytes are written in the reply: hex or base64.")
+    min_f = Field(ge=-safe, le=safe, description="Smallest integer that may be returned (inclusive).")
+    max_f = Field(ge=-safe, le=safe, description="Largest integer that may be returned (inclusive), not below min.")
+    kind_f = Field(
+        description="Kind of token: api_key (64 hex characters), otp_6 (six digits) or uuid_v4 (a version 4 UUID)."
+    )
+    owner_f = Field(
+        max_length=tokens.MAX_OWNER_LENGTH,
+        description="Who the token is for. When given, only a keyed hash of the token is stored, so the owner can "
+        "redeem it once before it expires. Omit for a token that is not stored.",
+    )
+    expiry_f = Field(
+        ge=1,
+        le=max_expiry,
+        description=f"Seconds until the stored token expires, 1 to {max_expiry}. Needs owner; defaults if omitted.",
+    )
+
     @server.tool()
-    async def get_random_bytes(length: int, encoding: Literal["hex", "base64"]) -> IssuedValue:
+    async def get_random_bytes(
+        length: Annotated[int, length_f], encoding: Annotated[Literal["hex", "base64"], encoding_f]
+    ) -> IssuedValue:
+        """Return cryptographically strong random bytes from pooled Qrypt quantum entropy.
+
+        Each byte is served once and never again. The reply carries the encoded value and metadata
+        (source, batch id, bytes consumed) that ties the call to the audit log.
+        """
         return await call("get_random_bytes", lambda p: issuance.get_random_bytes(p, length, encoding))
 
     @server.tool()
-    async def random_int(min: int, max: int) -> IssuedValue:  # noqa: A002
+    async def random_int(min: Annotated[int, min_f], max: Annotated[int, max_f]) -> IssuedValue:  # noqa: A002
+        """Return a uniformly distributed random integer between min and max, both included.
+
+        The integer is drawn from pooled Qrypt entropy with rejection sampling, so there is no modulo bias.
+        Both bounds must lie within plus or minus 2^53 - 1.
+        """
         return await call("random_int", lambda p: issuance.random_int(p, min, max))
 
     @server.tool()
     async def generate_token(
-        kind: Literal["api_key", "otp_6", "uuid_v4"],
-        owner: str | None = None,
-        expiry_seconds: int | None = None,
+        kind: Annotated[Literal["api_key", "otp_6", "uuid_v4"], kind_f],
+        owner: Annotated[str | None, owner_f] = None,
+        expiry_seconds: Annotated[int | None, expiry_f] = None,
     ) -> IssuedValue:
+        """Generate a token from pooled Qrypt entropy: an API key, a six-digit one-time code or a UUID v4.
+
+        With an owner the token is stored hashed with an expiry and can be redeemed once; the audit log
+        never holds the token itself.
+        """
         return await call("generate_token", lambda p: issuance.generate_token(p, kind, owner, expiry_seconds))
 
     return server

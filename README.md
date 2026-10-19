@@ -69,6 +69,14 @@ Paste into any MCP-capable client (Claude Desktop, Cursor, Inspector). Replace t
 
 `make db-url` prints the `DATABASE_URL` the Makefile uses. Tools: `get_random_bytes(length, encoding)`, `random_int(min, max)`, `generate_token(kind)`.
 
+## Run the agent
+
+The Secure Token Agent turns a plain request ("a 6-digit code for user-42") into a tool call and answers with a reference, never the value.
+
+- Free and scripted, no key: `make demo-chat` resets the local database, starts the real MCP server and the mock Qrypt, and drives the agent with a scripted model.
+- Interactive with a real model: set a free OpenRouter key (`export OPENROUTER_API_KEY=...`) with the variables from the quick start, then `make chat` (`docs/DEPLOY.md`).
+- Learn more: `docs/technical/` (overview, modules, data flows, database, API reference, security, decisions, limitations) and `docs/DEPLOYMENT_GUIDE.md` (hosting on Render).
+
 ## Timed walk-through
 
 `make clean-clone-check` follows this README and nothing else: it clones the committed `HEAD` into a temporary directory, runs the `quickstart` block, then the `inspector` block, each in a fresh shell on its own throwaway database, and prints the elapsed time against its target.

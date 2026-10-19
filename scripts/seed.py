@@ -1,7 +1,8 @@
 """Seed script (DP-6): 1 admin, 2 clients and 3 flagged seed tokens, with no live entropy and safe to run twice.
 
 Writes only through Access.create_credential and Tokens.store_seed_token. Keys and token values come from the
-operating system's random generator and are printed once, on the run that creates them. All names are synthetic.
+operating system's random generator (no entropy record: DEVIATIONS H02-1) and are printed once, on the run that
+creates them. All names are synthetic.
 Needs DATABASE_URL, KEY_HASH_SECRET and TOKEN_PEPPER in the environment. `list-names` prints what is stored.
 """
 
@@ -18,7 +19,7 @@ CREDENTIALS = [("admin", "admin"), ("client", "billing-agent"), ("client", "supp
 SEED_EXPIRY_SECONDS = 86400
 SEED_TOKENS = [
     ("seed-owner-1", "otp_6", lambda: f"{secrets.randbelow(10**6):06d}"),
-    ("seed-owner-2", "api_key", lambda: secrets.token_hex(16)),
+    ("seed-owner-2", "api_key", lambda: secrets.token_hex(32)),
     ("seed-owner-3", "uuid_v4", lambda: str(uuid.UUID(bytes=secrets.token_bytes(16), version=4))),
 ]
 

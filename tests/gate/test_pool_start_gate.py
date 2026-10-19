@@ -44,7 +44,7 @@ async def test_pool_start_ok(mock, db):
         if pool.level > KIB:
             break
         await asyncio.sleep(0.05)
-    assert pool.level > 0 and "64" in mock.sizes()
+    assert pool.level > 0 and "96" in mock.sizes()
     await pool.stop()
 
 

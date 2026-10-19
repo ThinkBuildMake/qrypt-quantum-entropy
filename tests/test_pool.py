@@ -105,7 +105,7 @@ async def test_pool_refill_below_low(monkeypatch):
     assert up.asked_kib == []
     await pool.take(3 * KIB)
     await asyncio.sleep(0.05)
-    assert up.asked_kib == [64] and up.levels_at_reserve == [30 * KIB] and pool.level == 94 * KIB
+    assert up.asked_kib == [96] and up.levels_at_reserve == [30 * KIB] and pool.level == 126 * KIB
     await pool.stop()
 
 
@@ -252,3 +252,17 @@ async def test_a_slow_meter_does_not_stall_the_event_loop(monkeypatch):  # S20: 
     await watcher
     await pool.stop()
     assert max(gaps) < 0.15, max(gaps)
+
+
+async def test_start_warns_when_marks_are_closer_than_a_refill(monkeypatch, tmp_path):
+    log_file = tmp_path / "pool.log"
+    configure_logging("DEBUG", str(log_file))
+    for low, high, expect in ((32 * KIB, 128 * KIB, False), (64 * KIB, 128 * KIB, True)):
+        pool = Pool(low, high)
+        FakeUpstream(monkeypatch, pool=pool)
+        await pool.start()
+        await pool.stop()
+        lines = [json.loads(x) for x in log_file.read_text().splitlines()]
+        assert any(x["event"] == "pool_marks_too_close" for x in lines) is expect
+        log_file.write_text("")
+    configure_logging()

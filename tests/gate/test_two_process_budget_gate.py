@@ -74,6 +74,6 @@ async def test_retry_one_batch(db, monkeypatch):
         taken = await pool.get_pool().take(8)  # no startup check: this take starts the first refill
     get_settings.cache_clear()
     assert len(taken.bytes) == 8
-    assert rows(db, "SELECT purpose, kib, outcome FROM batches") == [("refill", 64, "received")]
-    assert rows(db, "SELECT used_kib FROM budget") == [(64,)]
-    assert [r.status for r in mock.log] == [429, 200] and mock.sizes() == ["64", "64"]
+    assert rows(db, "SELECT purpose, kib, outcome FROM batches") == [("refill", 96, "received")]
+    assert rows(db, "SELECT used_kib FROM budget") == [(96,)]
+    assert [r.status for r in mock.log] == [429, 200] and mock.sizes() == ["96", "96"]

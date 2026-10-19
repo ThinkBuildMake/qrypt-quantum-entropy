@@ -175,8 +175,8 @@ mcp-call: db-up migrate ## call a tool (needs CLIENT_KEY from make seed, and Qry
 run-http: ## serve the HTTP service locally on :8000
 	$(UV) uvicorn qrypt_entropy.transport.http_app:app --port 8000
 
-trace: ## print the provenance of one issuance: make trace REF=<uuid>
-	@$(UV) python scripts/trace.py "$(REF)"
+trace: ## print the provenance of one issuance: make trace REF=<uuid>, or by token: TRACE_VALUE=<code> make trace OWNER=<owner>
+	@$(UV) python scripts/trace.py "$(REF)" "$(OWNER)"
 
 chat: db-up migrate ## S32: the interactive agent with the REAL OpenRouter model against the local stack (docs/DEPLOY.md S32); needs OPENROUTER_API_KEY, MCP_CLIENT_KEY, KEY_HASH_SECRET, PEPPER, QRYPT_BASE_URL, QRYPT_API_KEY
 	$(UV) python scripts/chat_local.py

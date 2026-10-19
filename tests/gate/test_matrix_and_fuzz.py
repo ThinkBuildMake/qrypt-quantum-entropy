@@ -62,7 +62,8 @@ def sample_path(path, client_id=REF):
 
 
 def sample_body(route):
-    paths = {"/verify": {"owner": "user-42", "value": "123456"}, "/admin/budget": {"capKib": 10},
+    paths = {"/verify": {"owner": "user-42", "value": "123456"},
+             "/admin/trace-token": {"owner": "user-42", "value": "123456"}, "/admin/budget": {"capKib": 10},
              "/admin/clients": {"name": f"matrix-{uuid.uuid4().hex}"}}  # fmt: skip
     return paths.get(route.path)
 
@@ -103,8 +104,9 @@ async def test_ac10_authorization_matrix_over_every_tool_and_route():
                 method, sample_path(route.path, existing_client), headers=headers, json=sample_body(route)
             )
             allowed = roles is None or ROLE_OF[who] in roles
-            # /verify answers a refusal outcome (404 for the sample body) once the caller is authorized
-            passed = resp.status_code in (200, 404) if route.path == "/verify" else resp.status_code < 400
+            # /verify and /admin/trace-token answer 404 for the sample body once the caller is authorized
+            lookup = route.path in ("/verify", "/admin/trace-token")
+            passed = resp.status_code in (200, 404) if lookup else resp.status_code < 400
             assert passed == allowed, (method, route.path, who, resp.status_code)
             if not allowed:
                 assert resp.status_code == (401 if who == "none" else 403)
