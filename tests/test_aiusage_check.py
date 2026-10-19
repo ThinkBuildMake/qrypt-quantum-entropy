@@ -30,7 +30,7 @@ def test_a_missing_make_target_is_reported():
 
 
 def test_runtime_model_in_building_section_is_reported():
-    model = "google/gemma-4-31b-it:free"
+    model = next(line.split("=", 1)[1].split()[0] for line in ENV.splitlines() if line.startswith("AGENT_MODEL="))
     bad = TEXT.replace("## Prompts and configuration", f"\nAlso {model}.\n\n## Prompts and configuration", 1)
     assert any("keep them apart" in p for p in problems(bad))
 
