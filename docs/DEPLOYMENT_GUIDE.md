@@ -6,9 +6,9 @@ scattered notes: `docs/DEPLOY.md` keeps the exact S01 check commands and the S20
 backup internals. Where this guide and those differ, this guide is current. `make guide-check` fails if a command, script
 or variable named here does not exist or if `.env.example` and the variable table below disagree.
 
-**Status: nothing in this guide has been run against Render, GitHub Actions or live Qrypt.** The build had none of those
-accounts. Everything else was run locally (see "What was and was not verified" at the end). Do the first-deploy checklist
-in order and tick it off.
+**Status (2026-10-19): first deploy done.** The service runs on Render from `main` against the production database, the gate
+is green on GitHub, and the first live Qrypt call has been made. The first-deploy checklist at the end shows what is ticked
+and what is still open.
 
 ## 1. What you are deploying
 
@@ -218,6 +218,7 @@ Add one row for every database in use, with the KiB it has spent when you finish
 |---|---|---|---|---|
 | 2026-10-17 | start of assessment | 0 | 0 | owner's reading, REQUIREMENTS GC-4 |
 | 2026-10-19 | spike `qrypt-db` (Render, deleted) | 0 | 0 | roles spike only, no live call; production `qrypt-db` created 2026-10-19T20:53Z, expires 2026-11-18 |
+| 2026-10-19 | production `qrypt-db` (Render, in use) | 97 | 97 | AC9 live run, one `get_random_bytes` (16 B): `startup_check` 1 KiB received; `refill` 96 KiB got HTTP 429 from Qrypt and is metered as failed (reservations are not refunded); no 401 |
 | | | | | |
 
 ## 8b. Demos and checks that run locally
@@ -285,13 +286,13 @@ uvicorn, the backup and the restore drill with a throwaway key pair, config prof
 
 **Not verified: verify on first deploy.** Tick each, in order:
 
-- [ ] 1. Render builds from `render.yaml` on Python 3.14 with uv, and the service becomes healthy on `/health`.
-- [ ] 2. `make spike-roles` passes on the real Render free database (else take the Neon fallback).
-- [ ] 3. TLS: `https://$RENDER_URL/health` works and plain HTTP is redirected or refused.
-- [ ] 4. The migrations apply on Postgres 18 and a second run changes nothing.
-- [ ] 5. A first request after idle takes about a minute and still succeeds; a restart of the service loses no rows (RL-7).
-- [ ] 6. The first live Qrypt call: the startup check logs no 401, the meter reads 65 KiB or less, and the budget log has its row.
-- [ ] 7. The gate workflow (`.github/workflows/gate.yml`) is green on GitHub, including the gitleaks run.
-- [ ] 8. The backup workflow runs on its schedule, installs `pg_dump` 18 and `age`, and uploads an artifact that `make restore-drill` accepts.
-- [ ] 9. The OpenRouter credit shows on the account and the `:free` model answers within the limits in section 2.
+- [x] 1. Render builds from `render.yaml` on Python 3.14 with uv, and the service becomes healthy on `/health`. (2026-10-19)
+- [x] 2. `make spike-roles` passes on the real Render free database (else take the Neon fallback). (2026-10-19, Render; no Neon)
+- [x] 3. TLS: `https://$RENDER_URL/health` works and plain HTTP is redirected or refused. (2026-10-19: 301 to https; TLS 1.1 refused)
+- [x] 4. The migrations apply on Postgres 18 and a second run changes nothing. (2026-10-19)
+- [x] 5. A first request after idle takes about a minute and still succeeds; a restart of the service loses no rows (RL-7). (2026-10-19: after 17 minutes idle the first `/health` took 42 s and answered 200, the next 0.15 s; a Render restart left every table's row count unchanged)
+- [x] 6. The first live Qrypt call: the startup check logs no 401, the meter reads 97 KiB or less (1 KiB startup check plus the 96 KiB first prefetch, section 8), and the budget log has its row. (2026-10-19: 97 KiB; the prefetch got a 429, see section 8)
+- [x] 7. The gate workflow (`.github/workflows/gate.yml`) is green on GitHub, including the gitleaks run. (2026-10-19)
+- [ ] 8. The backup workflow runs on its schedule, installs `pg_dump` 18 and `age`, and uploads an artifact that `make restore-drill` accepts. (2026-10-19: a manual run uploaded an artifact and the restore drill passed on it, every table matching; the first scheduled run, 2026-10-20 03:17 UTC, is still to confirm)
+- [x] 9. The OpenRouter credit shows on the account and the `:free` model answers within the limits in section 2. (2026-10-19: credit confirmed with `/api/v1/key`; `google/gemma-4-31b-it:free` returned 429 from Google's shared free pool for over 15 minutes, so the agent runs on `minimax/minimax-m3.1-flash:free`, which answers tool calls in about 2 s; see `docs/DEVIATIONS.md`)
 - [ ] 10. On day 14 the three routes (`/verify`, the admin API, `/health`) still answer from outside (DP-2).

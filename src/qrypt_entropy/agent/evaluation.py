@@ -16,7 +16,7 @@ from qrypt_entropy.agent.reply_check import VALUE
 
 TOOLS = {"get_random_bytes", "random_int", "generate_token"}
 RULE_KINDS = ("eq", "match", "range", "absent")
-NUMBER = re.compile(r"(?<![\w.])\d+(?![\w.])")
+NUMBER = re.compile(r"(?<![\w.])\d+(?!\w|\.\d)")  # a whole number; "58." ending a sentence counts, "3.14" does not
 
 
 class RequestLimitReached(RuntimeError):
@@ -84,7 +84,11 @@ def unbacked_values(reply: str, calls: list[dict], prompt: str = "") -> list[str
     found = [m.group() for m in VALUE.finditer(reply) if m.group().lower() not in returned]
     if any(c["name"] == "random_int" for c in calls):
         allowed = returned | set(NUMBER.findall(prompt)) | {str(v) for c in calls for v in c["metadata"].values()}
-        found += [n for n in NUMBER.findall(reply) if n not in allowed and n not in found and len(n) < 6]
+        allowed |= {str(v) for c in calls for v in (c.get("arguments") or {}).values()}  # "1 to 6" restates the call
+        rest = reply  # a returned UUID quoted back holds digit-only groups ("-9088-") that are not numbers of their own
+        for value in (v for v in returned if len(v) >= 6):
+            rest = re.sub(re.escape(value), " ", rest, flags=re.IGNORECASE)
+        found += [n for n in NUMBER.findall(rest) if n not in allowed and n not in found and len(n) < 6]
     return found
 
 

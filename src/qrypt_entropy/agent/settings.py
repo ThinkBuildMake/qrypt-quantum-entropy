@@ -12,7 +12,7 @@ class AgentSettings(BaseSettings):
     openrouter_base_url: str = (
         "https://openrouter.ai/api/v1"  # a local OpenAI-compatible stub in tests and make demo-chat
     )
-    agent_model: str = "google/gemma-4-31b-it:free"  # a :free tool-calling model (STACK 11); S32 confirms by trial
+    agent_model: str = "minimax/minimax-m3.1-flash:free"  # :free, tool-calling; chosen by trial (DEVIATIONS DEP-1)
     agent_log_file: str = "logs/agent.log"
     agent_results_file: str = "results/agent_run.json"
     mcp_client_key: str | None = None

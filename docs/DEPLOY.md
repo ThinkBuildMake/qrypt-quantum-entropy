@@ -39,7 +39,7 @@ at the mock's token) and connect. `GET http://127.0.0.1:8099/__mock/status?code=
    ```
    psql "$DATABASE_URL" -c 'SELECT purpose, kib, outcome FROM batches ORDER BY requested_at' -c 'SELECT used_kib FROM budget'
    ```
-   Expected: one `startup_check` of 1 KiB and one `refill` of 64 KiB or more, both `received`, and `used_kib` 1,024 or less (65 with the defaults).
+   Expected: one `startup_check` of 1 KiB and one `refill` of 64 KiB or more, both `received`, and `used_kib` 1,024 or less (97 with the defaults: 1 + 96).
    If the startup check shows `failed`, read `logs/server.log` for `pool_startup_check_failed`: a 401 names an invalid or expired token.
 
 Budget log: the single running log, with a total across databases, is in `docs/DEPLOYMENT_GUIDE.md` section 8. Write the reading there.

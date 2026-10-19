@@ -68,6 +68,12 @@ def test_unbacked_value_in_a_random_int_reply():
     assert unbacked_values("You got 57", calls, case["prompt"]) == []
     assert unbacked_values("You got 58", calls, case["prompt"]) == ["58"]
     assert unbacked_values("between 1 and 100: 57", calls, case["prompt"]) == []
+    batch = "f0a70b2b-9acb-464f-9088-1303b8d0ab42"  # a real model quoted the batch id back; "9088" is not a number
+    calls[0]["metadata"] = {"batch_id": batch, "bytes_consumed": 1}
+    assert unbacked_values(f"You got 57. Batch `{batch}`, 1 byte.", calls, case["prompt"]) == []
+    assert unbacked_values(f"You got 57. Batch `{batch}`, also 58.", calls, case["prompt"]) == ["58"]
+    die = [{**call("random_int", min=1, max=6), "value": "4", "metadata": {"bytes_consumed": 1}}]
+    assert unbacked_values("You rolled 4 (a die: 1 to 6).", die, "roll a die for me") == []
 
 
 def test_adversarial_verdicts():
