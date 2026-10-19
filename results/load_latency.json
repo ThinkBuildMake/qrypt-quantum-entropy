@@ -1,0 +1,27 @@
+{
+  "run": "PF-1 latency, warm pool, calls one at a time over stdio",
+  "calls": 1000,
+  "mix": "evenly across get_random_bytes(64), random_int(1..1000), generate_token(uuid_v4)",
+  "p50_ms": 6.34,
+  "p95_ms": 13.98,
+  "p99_ms": 20.16,
+  "max_ms": 82.65,
+  "errors": 0,
+  "database_used": "PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), local server (not the Docker Compose service) on localhost:5432",
+  "threshold_p95_ms": 50.0,
+  "environment": {
+    "machine": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39, 4 CPUs, Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "python": "3.14.6",
+    "database": "PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1), local server (not the Docker Compose service) on localhost:5432",
+    "upstream": "committed mock Qrypt (tests/mock_qrypt.py): 200 ms added latency, 30 requests per 10 s enforced; the live Qrypt service was not used",
+    "transport": "MCP over stdio to a server process; client and server share the machine",
+    "budget": "the test database's cap is raised to 100,000,000 KiB (production cap: 10,240 KiB)"
+  },
+  "checks": [
+    {
+      "check": "AC1 p95 under 50.0 ms over 1000 calls",
+      "pass": true,
+      "detail": "p95 13.98 ms, 0 errors"
+    }
+  ]
+}

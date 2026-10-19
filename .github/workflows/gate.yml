@@ -1,0 +1,41 @@
+name: gate
+on:
+  push:
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the secret scan reads the full history
+      - uses: astral-sh/setup-uv@v6
+      - name: Install gitleaks CLI
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+      - name: Install PostgreSQL 18 tools and age
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -sSfo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          printf 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt %s-pgdg main\n' "$VERSION_CODENAME" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-18 postgresql-client-18 age
+          sudo systemctl stop postgresql || true # only the binaries are needed (the drill starts its own cluster)
+          echo /usr/lib/postgresql/18/bin >> "$GITHUB_PATH" # the runner ships an older pg_dump that the wrapper would pick
+      - run: uv sync --frozen
+      - run: make gate

@@ -1,0 +1,9 @@
+# Reviewed false positives, by fingerprint (commit:file:rule:line). None is a real credential:
+# the old test line set a launch key to a throwaway MARKER string, and docs/DEPLOY.md put the shell variable
+# $CLIENT_KEY after "Bearer" in a curl example. Commits ac5482e and 1d7f086 are on story/S01.
+3d08c6820b603b653853cb5849a9cdb87c223bc0:tests/gate/test_logcfg_gate.py:generic-api-key:169
+b04fc6e59ea62ad492bbaaf857beb2026396b7bc:tests/gate/test_logcfg_gate.py:generic-api-key:169
+ac5482ef6b605bee897ac5ab5686d5ffab7139be:docs/DEPLOY.md:curl-auth-header:11
+ac5482ef6b605bee897ac5ab5686d5ffab7139be:docs/DEPLOY.md:curl-auth-header:15
+1d7f0864deaf885375aadf2e5ebff8b0c39e6289:docs/DEPLOY.md:curl-auth-header:11
+1d7f0864deaf885375aadf2e5ebff8b0c39e6289:docs/DEPLOY.md:curl-auth-header:15
