@@ -39,7 +39,8 @@ def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
 
 def _bin(name: str) -> str:
     versions = sorted(glob(f"/usr/lib/postgresql/*/bin/{name}"), key=lambda p: int(Path(p).parts[4]), reverse=True)
-    found = next(iter(versions), None) or shutil.which(name)  # the newest installed: a dump needs a server at least as new
+    # the newest installed version: a dump needs a server at least as new
+    found = next(iter(versions), None) or shutil.which(name)
     if not found:
         raise SystemExit(f"{name} not found: set DRILL_ADMIN_URL to a fresh Postgres server instead")
     return found
