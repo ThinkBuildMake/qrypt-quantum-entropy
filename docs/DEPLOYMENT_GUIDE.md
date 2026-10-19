@@ -92,6 +92,7 @@ These appear in the commands below as shell variables you set yourself; they are
 | `RENDER_ADMIN_URL` | the same string; the database owner is the admin for the spike |
 | `CLIENT_KEY` | a client key printed by `make seed` against that database |
 | `ADMIN_KEY` | the admin key printed by `make seed` |
+| `SPENT_KIB` | KiB already spent against earlier databases (the budget log's running total before the production database) |
 | `CONFIRM_RESET` | set to 1 to let a demo reset an external database (never do this on the hosted one) |
 | `BACKUP_DIR` | where `make backup` writes (default `backups`) |
 | `BACKUP_FILE` | a specific backup file for the restore drill |
@@ -237,6 +238,35 @@ the hosted database).
 | `make report`, `make trace` | the nine report panels; the provenance of one issuance |
 
 Run `make gate` for everything the CI gate runs.
+
+## 8c. Checks against the deployed service, the production cap and the submission
+
+All of these are read by the human with the service up. `CLIENT_KEY` and `ADMIN_KEY` come from `make seed`; the scripts read
+them from the environment and never print them. Exit codes: 0 passed, 1 failed, 2 nothing failed but something could not be checked.
+
+```
+make check-deployed URL=https://$RENDER_URL
+make check-routes URL=https://$RENDER_URL
+```
+
+`make check-deployed` calls `GET /health` (retrying for 90 seconds, because the free service sleeps), `POST /verify` and
+`GET /admin/usage` over TLS, then asks for the plain `http://` address (it must be refused or redirected to https) and offers only TLS 1.1 (the
+handshake must fail). `make check-routes URL=` calls every read-only hosted route once and fails on any entropy-like key or an
+unexpected field; without `URL=` the same target runs the local test instead.
+
+The production cap leaves room for what the earlier databases spent (X is the last running total in the table above, or
+pass `SPENT_KIB`). Set it right after the production database is seeded, and read the final figure after the demo:
+
+```
+make budget-cap URL=https://$RENDER_URL SPENT_KIB=97
+make budget-reading URL=https://$RENDER_URL SPENT_KIB=97
+```
+
+`make budget-cap` sets `capKib` to 10240 minus X and reads `GET /admin/usage` back (the cap must match and `usedKib` must be at or
+below it). `make budget-reading` fails if `usedKib` plus X is over 10,240 and prints the row to paste into the log in section 8.
+
+Last, `make submission-check` (required files, the one-line description, the full-history secret scan, the last push, one author, the
+last commit against the 2026-10-21 04:59 UTC cut-off). The human steps in order are in `docs/SUBMISSION_CHECKLIST.md`.
 
 ## 9. Deviations the reader must know
 

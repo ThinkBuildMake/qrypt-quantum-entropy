@@ -38,7 +38,11 @@ export GATE_P95_MS
 .PHONY: check-env
 .PHONY: check-imports
 .PHONY: check-language
+.PHONY: budget-cap
+.PHONY: budget-reading
+.PHONY: check-deployed
 .PHONY: check-routes
+.PHONY: submission-check
 .PHONY: clean-clone-check
 .PHONY: config-show
 .PHONY: coverage
@@ -273,8 +277,28 @@ ROBUST := tests/gate/test_robust_surface_gate.py --no-cov -s -q -p no:logging --
 fuzz: db-up migrate ## S37 AC2: 1,000 malformed inputs across every tool and route; 0 unhandled errors, 0 5xx
 	$(UV) pytest $(ROBUST) -k fuzz
 
-check-routes: db-up migrate ## S37 AC4: each hosted route called once with the right key; none returns an entropy-derived value
+ifneq ($(strip $(URL)),)
+check-routes: ## S46 AC4: the read-only hosted routes of a DEPLOYED service (make check-routes URL=https://host); needs CLIENT_KEY and ADMIN_KEY
+	$(UV) python -m tools.check_deployed routes "$(URL)"
+else
+check-routes: db-up migrate ## S37 AC4: each hosted route called once with the right key; none returns an entropy-derived value (URL=https://host checks a deployed service)
 	$(UV) pytest $(ROBUST) -k hosted_route
+endif
+
+check-deployed: ## S46 AC2, AC3: /verify, /admin/usage, /health over TLS, plain http and TLS 1.1 refused: make check-deployed URL=https://host (needs CLIENT_KEY, ADMIN_KEY)
+	@test -n "$(URL)" || { echo "usage: make check-deployed URL=https://host" >&2; exit 1; }
+	$(UV) python -m tools.check_deployed deployed "$(URL)"
+
+budget-cap: ## S46 AC6: set the production cap to 10240 - SPENT_KIB and read it back: make budget-cap URL=https://host [SPENT_KIB=n] (needs ADMIN_KEY)
+	@test -n "$(URL)" || { echo "usage: make budget-cap URL=https://host [SPENT_KIB=n]" >&2; exit 1; }
+	$(UV) python -m tools.budget_log cap "$(URL)"
+
+budget-reading: ## S46 AC7: the final live reading and the budget-log row to add: make budget-reading URL=https://host [SPENT_KIB=n] (needs ADMIN_KEY)
+	@test -n "$(URL)" || { echo "usage: make budget-reading URL=https://host [SPENT_KIB=n]" >&2; exit 1; }
+	$(UV) python -m tools.budget_log reading "$(URL)"
+
+submission-check: ## S46 AC8, AC9: required files, description, secret scan, last push, one author, deadline (exit 2 = something not checked)
+	$(UV) python -m tools.submission_check
 
 route-latency: db-up migrate ## S37 AC5: 100 requests per hosted route, p95 <= 1 s, figures in results/route_latency.json (ROUTE_LATENCY_FILE)
 	$(UV) pytest $(ROBUST) -k route_latency

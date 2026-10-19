@@ -165,7 +165,7 @@ def test_config_show_prints_profile_without_secrets(profile):
 
 
 def test_missing_pepper_stops_start_naming_variable():
-    env = {"MCP_CLIENT_KEY": "MARKER-launch-key-31"}
+    env = {"MCP_CLIENT_KEY": "MARKER-1"}
     result = run(["-m", "qrypt_entropy.transport.mcp_server"], {**env, "PEPPER": ""})
     assert result.returncode == 1
     assert "PEPPER" in result.stderr
