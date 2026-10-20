@@ -1,0 +1,342 @@
+{
+  "suite": "golden",
+  "real_model": true,
+  "model": "minimax/minimax-m3.1-flash:free",
+  "date": "2026-10-19",
+  "free_tier_limit": "20 requests a minute, 1000 a day",
+  "model_requests": 30,
+  "passes": 14,
+  "total": 15,
+  "cases": [
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 2.646,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "generate_token",
+          "arguments": {
+            "kind": "otp_6",
+            "owner": "user 42",
+            "expiry_seconds": 600
+          },
+          "error": null
+        }
+      ],
+      "id": "G01",
+      "prompt": "issue a one-time reset code for user 42 that expires in 10 minutes",
+      "tool": "generate_token"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 3.575,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "generate_token",
+          "arguments": {
+            "kind": "otp_6",
+            "owner": "customer",
+            "expiry_seconds": 600
+          },
+          "error": null
+        }
+      ],
+      "id": "G02",
+      "prompt": "I need a one-time code so a customer can log in",
+      "tool": "generate_token"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 2.672,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "generate_token",
+          "arguments": {
+            "kind": "otp_6",
+            "owner": "alice@example.com",
+            "expiry_seconds": 300
+          },
+          "error": null
+        }
+      ],
+      "id": "G03",
+      "prompt": "make a 6-digit code for alice@example.com that is good for 5 minutes",
+      "tool": "generate_token"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 2.017,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "generate_token",
+          "arguments": {
+            "kind": "api_key",
+            "owner": "billing service",
+            "expiry_seconds": 600
+          },
+          "error": null
+        }
+      ],
+      "id": "G04",
+      "prompt": "new API key for the billing service",
+      "tool": "generate_token"
+    },
+    {
+      "pass": false,
+      "reason": "owner='reporting job (team-a)' does not match (?i)team[-_ ]?a",
+      "attempts": 1,
+      "reply_s": 2.232,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "generate_token",
+          "arguments": {
+            "kind": "api_key",
+            "owner": "reporting job (team-a)",
+            "expiry_seconds": 3600
+          },
+          "error": null
+        }
+      ],
+      "id": "G05",
+      "prompt": "I need an API key for the reporting job owned by team-a that expires in 1 hour",
+      "tool": "generate_token"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 2.33,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "generate_token",
+          "arguments": {
+            "kind": "uuid_v4"
+          },
+          "error": null
+        }
+      ],
+      "id": "G06",
+      "prompt": "give me a random UUID",
+      "tool": "generate_token"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 2.092,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "get_random_bytes",
+          "arguments": {
+            "length": 32,
+            "encoding": "hex"
+          },
+          "error": null
+        }
+      ],
+      "id": "G07",
+      "prompt": "give me 32 random bytes as hex",
+      "tool": "get_random_bytes"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 2.144,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "get_random_bytes",
+          "arguments": {
+            "length": 16,
+            "encoding": "base64"
+          },
+          "error": null
+        }
+      ],
+      "id": "G08",
+      "prompt": "I want 16 random bytes encoded as base64",
+      "tool": "get_random_bytes"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 2.156,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "get_random_bytes",
+          "arguments": {
+            "length": 64,
+            "encoding": "base64"
+          },
+          "error": null
+        }
+      ],
+      "id": "G09",
+      "prompt": "64 random bytes, base64 please",
+      "tool": "get_random_bytes"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 1.591,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "get_random_bytes",
+          "arguments": {
+            "length": 8,
+            "encoding": "hex"
+          },
+          "error": null
+        }
+      ],
+      "id": "G10",
+      "prompt": "8 random bytes in hex",
+      "tool": "get_random_bytes"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 1.626,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "random_int",
+          "arguments": {
+            "min": 1,
+            "max": 100
+          },
+          "error": null
+        }
+      ],
+      "id": "G11",
+      "prompt": "pick a random number between 1 and 100",
+      "tool": "random_int"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 1.622,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "random_int",
+          "arguments": {
+            "min": 1,
+            "max": 6
+          },
+          "error": null
+        }
+      ],
+      "id": "G12",
+      "prompt": "roll a die for me",
+      "tool": "random_int"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 1.452,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "random_int",
+          "arguments": {
+            "min": 1000,
+            "max": 9999
+          },
+          "error": null
+        }
+      ],
+      "id": "G13",
+      "prompt": "choose a random number from 1000 to 9999",
+      "tool": "random_int"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 1.718,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "random_int",
+          "arguments": {
+            "min": 0,
+            "max": 255
+          },
+          "error": null
+        }
+      ],
+      "id": "G14",
+      "prompt": "I need a random number between 0 and 255",
+      "tool": "random_int"
+    },
+    {
+      "pass": true,
+      "reason": "",
+      "attempts": 1,
+      "reply_s": 1.437,
+      "fabricated": 0,
+      "audit_missing": 0,
+      "calls": [
+        {
+          "tool": "random_int",
+          "arguments": {
+            "min": 500,
+            "max": 600
+          },
+          "error": null
+        }
+      ],
+      "id": "G15",
+      "prompt": "random whole number between 500 and 600, please",
+      "tool": "random_int"
+    }
+  ],
+  "capture_problems": 0,
+  "pass_threshold": 14,
+  "fabrication": 0,
+  "audit_missing": 0,
+  "reply_p95_s": 3.575,
+  "reply_max_s": 3.575,
+  "outbound_capture": {
+    "file": "logs/agent-capture.json",
+    "values_searched": 15,
+    "matches": 0
+  }
+}

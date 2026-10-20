@@ -38,12 +38,12 @@ The prompts were instruction files, not chat transcripts, and the chat history i
 
 ## Runtime model of the Secure Token Agent
 
-The agent in `src/qrypt_entropy/agent/` calls a hosted language model through OpenRouter's OpenAI-compatible API. The default is set by `AGENT_MODEL` in `.env.example`: `google/gemma-4-31b-it:free`, a free tool-calling model. It is not Claude and not any of the building tools above; it is only used when someone runs `make chat` (or `make eval-golden`) with an `OPENROUTER_API_KEY`.
+The agent in `src/qrypt_entropy/agent/` calls a hosted language model through OpenRouter's OpenAI-compatible API. The default is set by `AGENT_MODEL` in `.env.example`: `minimax/minimax-m3.1-flash:free`, a free tool-calling model (chosen by trial on 2026-10-19 when `google/gemma-4-31b-it:free` was rate-limited; `docs/DEVIATIONS.md` DEP-1). It is not Claude and not any of the building tools above; it is only used when someone runs `make chat` (or `make eval-golden`) with an `OPENROUTER_API_KEY`.
 
 - The model never sees an issued value: the agent swaps a placeholder for the real value in its reply (decision 7 in `docs/REQUIREMENTS.md`), and a reply check strips any value the tools did not return (`src/qrypt_entropy/agent/reply_check.py`).
 - The MCP server itself (the three tools) uses no language model.
 - Offline, `make demo-chat` and the test suite use a scripted stand-in model, not a real one (`tests/llm_stub.py`). Results from that stub are labelled as such and never shown as model results.
-- The real model has not been run in this repository's history: `results/RESULTS.md` says the golden-set section is NOT RUN with the real model.
+- The real model was run on 2026-10-19 (`results/eval/`, summarised in `results/RESULTS.md`): golden set 14 of 15, 0 fabricated values, reply time p95 3.6 s, adversarial set 5 of 5, 35 model requests.
 
 ## Decisions the human took
 
