@@ -77,6 +77,23 @@ The Secure Token Agent turns a plain request ("a 6-digit code for user-42") into
 - Interactive with a real model: set a free OpenRouter key (`export OPENROUTER_API_KEY=...`) with the variables from the quick start, then `make chat` (`docs/DEPLOY.md`).
 - Learn more: `docs/technical/` (overview, modules, data flows, database, API reference, security, decisions, limitations) and `docs/DEPLOYMENT_GUIDE.md` (hosting on Render).
 
+## Run it for real, with your own keys
+
+Everything above uses the mock. To use the live Qrypt service and a real model, continue in the quick-start shell
+(it already holds `KEY_HASH_SECRET`, `PEPPER`, the migrated database and `MCP_CLIENT_KEY`):
+
+```bash
+kill %1                                  # stop the mock
+unset QRYPT_BASE_URL                     # the default is the live Qrypt API (.env.example)
+export QRYPT_API_KEY=your-qrypt-token
+export OPENROUTER_API_KEY=your-openrouter-key   # a free OpenRouter key is enough; AGENT_MODEL picks the model
+make chat                                # ask for "a 6-digit reset code for user 42"; an empty line ends the session
+```
+
+- Or connect a client to the live server: use the MCP snippet above with the `QRYPT_BASE_URL` line deleted and your token in `QRYPT_API_KEY`.
+- Cost: each server start spends about 97 KiB of Qrypt entropy (a 1 KiB startup check and a 96 KiB prefetch). The database caps live use at 10,240 KiB; read the meter with `psql "$(make -s db-url)" -c 'SELECT used_kib, cap_kib FROM budget'`.
+- `make gate` stays offline: it never reads these keys.
+
 ## Timed walk-through
 
 `make clean-clone-check` follows this README and nothing else: it clones the committed `HEAD` into a temporary directory, runs the `quickstart` block, then the `inspector` block, each in a fresh shell on its own throwaway database, and prints the elapsed time against its target.

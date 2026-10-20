@@ -219,6 +219,8 @@ Add one row for every database in use, with the KiB it has spent when you finish
 | 2026-10-17 | start of assessment | 0 | 0 | owner's reading, REQUIREMENTS GC-4 |
 | 2026-10-19 | spike `qrypt-db` (Render, deleted) | 0 | 0 | roles spike only, no live call; production `qrypt-db` created 2026-10-19T20:53Z, expires 2026-11-18 |
 | 2026-10-19 | production `qrypt-db` (Render, in use) | 97 | 97 | AC9 live run, one `get_random_bytes` (16 B): `startup_check` 1 KiB received; `refill` 96 KiB got HTTP 429 from Qrypt and is metered as failed (reservations are not refunded); no 401 |
+| 2026-10-19 | local demo-video database (Docker, `qrypt-demo`) | 97 | 194 | `.demo/stack.sh capture`: one agent session with the real model, one `generate_token` (3 B); the capped request was refused at 0 KiB |
+| 2026-10-19 | local demo-video database (Docker, `qrypt-demo`, reset) | 97 | 291 | final video render: MCP Inspector against live Qrypt, one `generate_token` (3 B) |
 | | | | | |
 
 ## 8b. Demos and checks that run locally
